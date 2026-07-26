@@ -134,7 +134,12 @@ void main() {
       
       if (isValidStar) {
         vec2 starCenter = vec2(c / 12.0, r / 10.0);
-        vec2 localUv = cUv - starCenter;
+        
+        // Snapping the star center to the nearest LED grid coordinate to prevent spatial grid aliasing
+        vec2 starCenterPixels = (floor(starCenter * uLedResolution) + vec2(0.5)) / uLedResolution;
+        vec2 snappedStarCenter = mix(starCenter, starCenterPixels, uLedEmulation);
+        
+        vec2 localUv = cUv - snappedStarCenter;
         
         // Compute boundary fade using unscaled localUv to prevent square grid seams in the glow
         // Spacing is 0.0416 (half-width) and 0.05 (half-height) in canton coordinates
