@@ -86,15 +86,12 @@ float sdStar5(in vec2 p, in float r, in float rf) {
 
 void main() {
   // 1. Draw Stripes (13 horizontal bands)
-  vec3 stripeColor;
-  if (uRainbowMode > 0.5) {
-    // Scrolling, very gay rainbow stripes
-    stripeColor = hsv2rgb(vec3(fract(vUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
-  } else {
-    // 13 custom stripe colors (mapped from bottom to top)
-    float stripeIndex = clamp(floor(vUv.y * 13.0), 0.0, 12.0);
-    stripeColor = uStripeColors[int(stripeIndex)];
-  }
+  // Blend continuously between the static theme stripes and the scrolling rainbow
+  // so switching themes crossfades instead of popping at the uRainbowMode midpoint.
+  float stripeIndex = clamp(floor(vUv.y * 13.0), 0.0, 12.0);
+  vec3 staticStripeColor = uStripeColors[int(stripeIndex)];
+  vec3 rainbowStripeColor = hsv2rgb(vec3(fract(vUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
+  vec3 stripeColor = mix(staticStripeColor, rainbowStripeColor, uRainbowMode);
   
   // 2. Draw Canton (Union - top left)
   bool inCanton = (vUv.x < 0.4 && vUv.y > 6.0 / 13.0);
@@ -116,13 +113,10 @@ void main() {
     float glow = 0.0;
     float starIntensity = 1.0;
     vec3 activeStarColor = uStarColor;
-    vec3 activeCantonBg = uCantonColor;
-    
-    if (uRainbowMode > 0.5) {
-      // Dynamic shifting background for the canton in rainbow mode
-      activeCantonBg = hsv2rgb(vec3(fract(uTime * 0.08), 0.9, 0.22));
-    }
-    
+    // Blend continuously between the static canton color and the shifting rainbow background
+    vec3 rainbowCantonBg = hsv2rgb(vec3(fract(uTime * 0.08), 0.9, 0.22));
+    vec3 activeCantonBg = mix(uCantonColor, rainbowCantonBg, uRainbowMode);
+
     // Check if the nearest grid node is a valid star center
     if (r >= 1.0 && r <= 9.0 && c >= 1.0 && c <= 11.0) {
       bool isValidStar = false;
@@ -149,18 +143,17 @@ void main() {
         float d = sdStar5(localUv, 0.042, 0.381966);
         starMask = smoothstep(0.0025, -0.0025, d);
         
-        // Star color & intensity calculation
+        // Star color & intensity calculation, blended continuously between the static
+        // theme's gentle sparkle and rainbow mode's pulsating per-star color cycle
         float starPhase = r * 0.6 + c * 0.4;
-        
-        if (uRainbowMode > 0.5) {
-          // Dynamic rainbow colors + pulsating intensity per star
-          starIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
-          activeStarColor = hsv2rgb(vec3(fract(uTime * 0.25 + starPhase * 0.15), 0.85, 1.0));
-        } else {
-          // Gentle sparkling animation even for static themes
-          starIntensity = 0.8 + 0.2 * sin(uTime * 2.0 + starPhase);
-        }
-        
+
+        float staticIntensity = 0.8 + 0.2 * sin(uTime * 2.0 + starPhase);
+        float rainbowIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
+        starIntensity = mix(staticIntensity, rainbowIntensity, uRainbowMode);
+
+        vec3 rainbowStarColor = hsv2rgb(vec3(fract(uTime * 0.25 + starPhase * 0.15), 0.85, 1.0));
+        activeStarColor = mix(uStarColor, rainbowStarColor, uRainbowMode);
+
         // Star glow halo effect outside the boundary (multiplied by borderFade)
         glow = exp(-40.0 * max(d, 0.0)) * 0.32 * borderFade;
         
