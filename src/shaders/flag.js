@@ -164,9 +164,16 @@ void main() {
         // Correct aspect ratio
         localUv.x *= 1.4111;
         
+        // Compute grid-aware anti-aliasing edge width based on pixel size
+        // At high resolutions (smooth mode), this defaults to a sharp 0.0025.
+        // At low resolutions (LED mode), it expands to cover a fraction of the pixel size,
+        // softening the edges of the LED star points.
+        float pixelSize = 1.0 / cantonH;
+        float edgeWidth = mix(0.0025, 0.45 * pixelSize, uLedEmulation);
+        
         // Compute signed distance
         float d = sdStar5(localUv, 0.042, 0.381966);
-        starMask = smoothstep(0.0025, -0.0025, d);
+        starMask = smoothstep(edgeWidth, -edgeWidth, d);
         
         // Star color & intensity calculation, blended continuously between the static
         // theme's gentle sparkle and rainbow mode's pulsating per-star color cycle
