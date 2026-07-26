@@ -82,6 +82,9 @@ const currentStripeColors = props.stripeColors.map(c => new THREE.Color(c));
 const currentCantonColor = new THREE.Color(props.cantonColor);
 const currentStarColor = new THREE.Color(props.starColor);
 
+// Current rainbow-mode blend (0 = static theme colors, 1 = rainbow), eased toward target each frame
+let currentRainbowMode = props.rainbowMode ? 1.0 : 0.0;
+
 // Watchers to update target colors when props change
 watch(() => props.stripeColors, (newVal) => {
   newVal.forEach((hex, i) => {
@@ -148,7 +151,6 @@ const initThree = () => {
   });
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
 
   // 4. Orbit Controls
   controls = new OrbitControls(camera, renderer.domElement);
@@ -175,34 +177,7 @@ const initThree = () => {
   pointLight.position.set(0, 1, 1);
   scene.add(pointLight);
 
-  // 6. Flag pole & Finial (Gold Ball)
-  const poleGroup = new THREE.Group();
-  
-  // Metallic dark flagpole
-  const poleGeom = new THREE.CylinderGeometry(0.015, 0.015, 2.5, 16);
-  const poleMat = new THREE.MeshStandardMaterial({
-    color: 0x1f2937,
-    metalness: 0.8,
-    roughness: 0.2
-  });
-  const poleMesh = new THREE.Mesh(poleGeom, poleMat);
-  poleMesh.position.set(-0.965, -0.6, 0);
-  poleGroup.add(poleMesh);
-
-  // Gold ball at top
-  const ballGeom = new THREE.SphereGeometry(0.038, 16, 16);
-  const ballMat = new THREE.MeshStandardMaterial({
-    color: 0xd97706,
-    metalness: 0.9,
-    roughness: 0.1
-  });
-  const ballMesh = new THREE.Mesh(ballGeom, ballMat);
-  ballMesh.position.set(-0.965, 0.65, 0);
-  poleGroup.add(ballMesh);
-  
-  scene.add(poleGroup);
-
-  // 7. Waving Flag Plane
+  // 6. Waving Flag Plane
   // Aspect ratio is 1.9 : 1.0. Large segment count for smooth wave curves
   const flagGeom = new THREE.PlaneGeometry(1.9, 1.0, 120, 80);
 
@@ -226,7 +201,6 @@ const initThree = () => {
   });
 
   const flagMesh = new THREE.Mesh(flagGeom, flagMaterial);
-  // Center flag correctly so hoist is at flagpole
   flagMesh.position.set(0, 0, 0);
   scene.add(flagMesh);
 };
@@ -234,24 +208,28 @@ const initThree = () => {
 // Main frame animation loop
 const clock = new THREE.Clock();
 
+// Crossfade speed for theme transitions (higher = faster). ~1.1s to settle.
+const TRANSITION_RATE = 3.0;
+
 const animate = () => {
   animationFrameId = requestAnimationFrame(animate);
 
-  const elapsedTime = clock.getElapsedTime();
+  const delta = clock.getDelta();
+  const elapsedTime = clock.elapsedTime;
 
   if (flagMaterial) {
     // 1. Update time uniform for wave movements
     flagMaterial.uniforms.uTime.value = elapsedTime;
-    
+
     // 2. Synchronize configuration uniforms in real time
     flagMaterial.uniforms.uSpeed.value = props.speed;
     flagMaterial.uniforms.uAmplitude.value = props.amplitude;
     flagMaterial.uniforms.uFrequency.value.set(props.frequencyX, props.frequencyY);
     flagMaterial.uniforms.uShininess.value = props.shininess;
 
-    // 3. Smoothly interpolate colors (lerp) for transition effects on GPU
-    // Interpolation rate: 4.5% per frame (~250ms transition)
-    const lerpFactor = 0.045;
+    // 3. Smoothly interpolate colors and rainbow-mode blend for a graceful crossfade,
+    // using a delta-time-based factor so the transition speed is frame-rate independent.
+    const lerpFactor = 1 - Math.exp(-TRANSITION_RATE * delta);
     for (let i = 0; i < 13; i++) {
       if (currentStripeColors[i] && targetStripeColors[i]) {
         currentStripeColors[i].lerp(targetStripeColors[i], lerpFactor);
@@ -260,10 +238,13 @@ const animate = () => {
     currentCantonColor.lerp(targetCantonColor, lerpFactor);
     currentStarColor.lerp(targetStarColor, lerpFactor);
 
+    const targetRainbowMode = props.rainbowMode ? 1.0 : 0.0;
+    currentRainbowMode += (targetRainbowMode - currentRainbowMode) * lerpFactor;
+
     flagMaterial.uniforms.uStripeColors.value = currentStripeColors;
     flagMaterial.uniforms.uCantonColor.value = currentCantonColor;
     flagMaterial.uniforms.uStarColor.value = currentStarColor;
-    flagMaterial.uniforms.uRainbowMode.value = props.rainbowMode ? 1.0 : 0.0;
+    flagMaterial.uniforms.uRainbowMode.value = currentRainbowMode;
   }
 
   // 4. Auto-rotation of the scene camera

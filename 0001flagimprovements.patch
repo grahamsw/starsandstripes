@@ -1,0 +1,567 @@
+From a46b34fbf372ec0f53ddbe5967a5e3dd374391d3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 26 Jul 2026 01:43:56 +0000
+Subject: [PATCH] Remove dead shadow-map flag, extract themes, drop flagpole,
+ smooth theme transitions
+
+- Remove renderer.shadowMap.enabled: nothing cast or received shadows,
+  so it was pure wasted GPU work.
+- Move the 13 theme palette definitions out of App.vue into src/themes.js.
+- Remove the flagpole/finial meshes; the flag's hoist edge is already
+  pinned by the shader, so the pole wasn't structurally necessary.
+- Make theme-transition easing frame-rate independent (delta-time based)
+  and blend uRainbowMode continuously in the fragment shader instead of
+  hard-switching at a 0.5 threshold, so crossfading in/out of rainbow
+  themes is smooth instead of an instant pop.
+---
+ src/App.vue                   | 169 +---------------------------------
+ src/components/FlagCanvas.vue |  53 ++++-------
+ src/shaders/flag.js           |  47 ++++------
+ src/themes.js                 | 167 +++++++++++++++++++++++++++++++++
+ 4 files changed, 205 insertions(+), 231 deletions(-)
+ create mode 100644 src/themes.js
+
+diff --git a/src/App.vue b/src/App.vue
+index fc8d10f..c75d6d1 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -177,174 +177,7 @@
+ <script setup>
+ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
+ import FlagCanvas from './components/FlagCanvas.vue';
+-
+-// Curated theme palettes mapping to the 13 stripes
+-const THEMES = {
+-  classic: {
+-    name: 'Old Glory',
+-    stripeColors: [
+-      '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234', '#FFFFFF',
+-      '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234'
+-    ],
+-    cantonColor: '#3C3B6E',
+-    starColor: '#FFFFFF',
+-    rainbowMode: false
+-  },
+-  rainbowWave: {
+-    name: 'Rainbow Wave 🏳️‍🌈',
+-    stripeColors: Array(13).fill('#FF0000'), // generated procedurally on GPU
+-    cantonColor: '#3C3B6E',
+-    starColor: '#FFFFFF',
+-    rainbowMode: true
+-  },
+-  pride6: {
+-    name: 'Pride Rainbow',
+-    stripeColors: [
+-      '#782080', '#782080', // Violet (2 stripes)
+-      '#0000FF', '#0000FF', // Blue (2 stripes)
+-      '#008000', '#008000', // Green (2 stripes)
+-      '#FFFF00', '#FFFF00', // Yellow (2 stripes)
+-      '#FFA500', '#FFA500', // Orange (2 stripes)
+-      '#FF0000', '#FF0000', '#FF0000' // Red (3 stripes)
+-    ],
+-    cantonColor: '#1a0e40',
+-    starColor: '#FFFFFF',
+-    rainbowMode: false
+-  },
+-  pride8: {
+-    name: 'Gilbert Baker',
+-    stripeColors: [
+-      '#782080', // Violet
+-      '#1a0f5c', // Indigo
+-      '#00a2ff', '#00a2ff', // Turquoise
+-      '#008000', // Green
+-      '#FFFF00', '#FFFF00', // Yellow
+-      '#FFA500', // Orange
+-      '#FF0000', '#FF0000', // Red
+-      '#ff69b4', '#ff69b4', '#ff69b4' // Pink
+-    ],
+-    cantonColor: '#2b104a',
+-    starColor: '#FFFFFF',
+-    rainbowMode: false
+-  },
+-  transgender: {
+-    name: 'Trans Pride 🏳️‍⚧️',
+-    stripeColors: [
+-      '#5BCEFA', '#5BCEFA', '#5BCEFA', // Light Blue
+-      '#F5A9B8', '#F5A9B8', '#F5A9B8', // Pink
+-      '#FFFFFF', '#FFFFFF', // White
+-      '#F5A9B8', '#F5A9B8', '#F5A9B8', // Pink
+-      '#5BCEFA', '#5BCEFA' // Light Blue
+-    ],
+-    cantonColor: '#5BCEFA',
+-    starColor: '#FFFFFF',
+-    rainbowMode: false
+-  },
+-  bisexual: {
+-    name: 'Bi Pride',
+-    stripeColors: [
+-      '#0038A8', '#0038A8', '#0038A8', '#0038A8', '#0038A8', // Blue
+-      '#9B4F96', '#9B4F96', '#9B4F96', // Purple
+-      '#D60270', '#D60270', '#D60270', '#D60270', '#D60270' // Pink
+-    ],
+-    cantonColor: '#9B4F96',
+-    starColor: '#D60270',
+-    rainbowMode: false
+-  },
+-  lesbian: {
+-    name: 'Lesbian Pride',
+-    stripeColors: [
+-      '#A30262', '#A30262', '#A30262', // Dark Rose
+-      '#C4408B', '#C4408B', // Pink
+-      '#FFFFFF', '#FFFFFF', // White
+-      '#E46222', '#E46222', '#E46222', // Light Orange
+-      '#A50000', '#A50000', '#A50000' // Dark Orange
+-    ],
+-    cantonColor: '#A30262',
+-    starColor: '#FFFFFF',
+-    rainbowMode: false
+-  },
+-  nonbinary: {
+-    name: 'Non-Binary',
+-    stripeColors: [
+-      '#000000', '#000000', '#000000', // Black
+-      '#9C59D1', '#9C59D1', '#9C59D1', // Purple
+-      '#FFFFFF', '#FFFFFF', '#FFFFFF', // White
+-      '#FFF430', '#FFF430', '#FFF430', '#FFF430' // Yellow
+-    ],
+-    cantonColor: '#9C59D1',
+-    starColor: '#FFF430',
+-    rainbowMode: false
+-  },
+-  neonCyber: {
+-    name: 'Neon Cyber ⚡',
+-    stripeColors: [
+-      '#8a2be2', '#8a2be2', // Neon Violet
+-      '#ff007f', '#ff007f', // Neon Magenta
+-      '#00f6ff', '#00f6ff', // Neon Cyan
+-      '#8a2be2', '#8a2be2',
+-      '#ff007f', '#ff007f',
+-      '#00f6ff', '#00f6ff', '#00f6ff'
+-    ],
+-    cantonColor: '#ff007f',
+-    starColor: '#39ff14', // Neon Green
+-    rainbowMode: false
+-  },
+-  neonToxic: {
+-    name: 'Neon Toxic ☢️',
+-    stripeColors: [
+-      '#000000', '#000000',
+-      '#ff00ff', '#ff00ff', // Hot Pink
+-      '#000000', '#000000',
+-      '#39ff14', '#39ff14', // Slime Green
+-      '#000000', '#000000',
+-      '#ffff00', '#ffff00', '#ffff00' // Laser Yellow
+-    ],
+-    cantonColor: '#000000',
+-    starColor: '#39ff14',
+-    rainbowMode: false
+-  },
+-  monochrome: {
+-    name: 'Monochrome 🌑',
+-    stripeColors: [
+-      '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0',
+-      '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b'
+-    ],
+-    cantonColor: '#0f172a',
+-    starColor: '#f8fafc',
+-    rainbowMode: false
+-  },
+-  sunrise: {
+-    name: 'Sunrise 🌅',
+-    stripeColors: [
+-      '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d',
+-      '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b'
+-    ],
+-    cantonColor: '#4ecdc4',
+-    starColor: '#ffffff',
+-    rainbowMode: false
+-  },
+-  vaporwave: {
+-    name: 'Vaporwave 🌊',
+-    stripeColors: [
+-      '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce', '#b967ff',
+-      '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce'
+-    ],
+-    cantonColor: '#01cdfe',
+-    starColor: '#fffb96',
+-    rainbowMode: false
+-  },
+-  vintage: {
+-    name: 'Vintage 📜',
+-    stripeColors: [
+-      '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1',
+-      '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36'
+-    ],
+-    cantonColor: '#2c3e50',
+-    starColor: '#e6dfd1',
+-    rainbowMode: false
+-  }
+-};
++import { THEMES } from './themes.js';
+ 
+ const activeThemeKey = ref('rainbowWave');
+ const activeColors = reactive({
+diff --git a/src/components/FlagCanvas.vue b/src/components/FlagCanvas.vue
+index 1754f52..ec3df23 100644
+--- a/src/components/FlagCanvas.vue
++++ b/src/components/FlagCanvas.vue
+@@ -82,6 +82,9 @@ const currentStripeColors = props.stripeColors.map(c => new THREE.Color(c));
+ const currentCantonColor = new THREE.Color(props.cantonColor);
+ const currentStarColor = new THREE.Color(props.starColor);
+ 
++// Current rainbow-mode blend (0 = static theme colors, 1 = rainbow), eased toward target each frame
++let currentRainbowMode = props.rainbowMode ? 1.0 : 0.0;
++
+ // Watchers to update target colors when props change
+ watch(() => props.stripeColors, (newVal) => {
+   newVal.forEach((hex, i) => {
+@@ -148,7 +151,6 @@ const initThree = () => {
+   });
+   renderer.setSize(width, height);
+   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+-  renderer.shadowMap.enabled = true;
+ 
+   // 4. Orbit Controls
+   controls = new OrbitControls(camera, renderer.domElement);
+@@ -175,34 +177,7 @@ const initThree = () => {
+   pointLight.position.set(0, 1, 1);
+   scene.add(pointLight);
+ 
+-  // 6. Flag pole & Finial (Gold Ball)
+-  const poleGroup = new THREE.Group();
+-  
+-  // Metallic dark flagpole
+-  const poleGeom = new THREE.CylinderGeometry(0.015, 0.015, 2.5, 16);
+-  const poleMat = new THREE.MeshStandardMaterial({
+-    color: 0x1f2937,
+-    metalness: 0.8,
+-    roughness: 0.2
+-  });
+-  const poleMesh = new THREE.Mesh(poleGeom, poleMat);
+-  poleMesh.position.set(-0.965, -0.6, 0);
+-  poleGroup.add(poleMesh);
+-
+-  // Gold ball at top
+-  const ballGeom = new THREE.SphereGeometry(0.038, 16, 16);
+-  const ballMat = new THREE.MeshStandardMaterial({
+-    color: 0xd97706,
+-    metalness: 0.9,
+-    roughness: 0.1
+-  });
+-  const ballMesh = new THREE.Mesh(ballGeom, ballMat);
+-  ballMesh.position.set(-0.965, 0.65, 0);
+-  poleGroup.add(ballMesh);
+-  
+-  scene.add(poleGroup);
+-
+-  // 7. Waving Flag Plane
++  // 6. Waving Flag Plane
+   // Aspect ratio is 1.9 : 1.0. Large segment count for smooth wave curves
+   const flagGeom = new THREE.PlaneGeometry(1.9, 1.0, 120, 80);
+ 
+@@ -226,7 +201,6 @@ const initThree = () => {
+   });
+ 
+   const flagMesh = new THREE.Mesh(flagGeom, flagMaterial);
+-  // Center flag correctly so hoist is at flagpole
+   flagMesh.position.set(0, 0, 0);
+   scene.add(flagMesh);
+ };
+@@ -234,24 +208,28 @@ const initThree = () => {
+ // Main frame animation loop
+ const clock = new THREE.Clock();
+ 
++// Crossfade speed for theme transitions (higher = faster). ~1.1s to settle.
++const TRANSITION_RATE = 3.0;
++
+ const animate = () => {
+   animationFrameId = requestAnimationFrame(animate);
+ 
+-  const elapsedTime = clock.getElapsedTime();
++  const delta = clock.getDelta();
++  const elapsedTime = clock.elapsedTime;
+ 
+   if (flagMaterial) {
+     // 1. Update time uniform for wave movements
+     flagMaterial.uniforms.uTime.value = elapsedTime;
+-    
++
+     // 2. Synchronize configuration uniforms in real time
+     flagMaterial.uniforms.uSpeed.value = props.speed;
+     flagMaterial.uniforms.uAmplitude.value = props.amplitude;
+     flagMaterial.uniforms.uFrequency.value.set(props.frequencyX, props.frequencyY);
+     flagMaterial.uniforms.uShininess.value = props.shininess;
+ 
+-    // 3. Smoothly interpolate colors (lerp) for transition effects on GPU
+-    // Interpolation rate: 4.5% per frame (~250ms transition)
+-    const lerpFactor = 0.045;
++    // 3. Smoothly interpolate colors and rainbow-mode blend for a graceful crossfade,
++    // using a delta-time-based factor so the transition speed is frame-rate independent.
++    const lerpFactor = 1 - Math.exp(-TRANSITION_RATE * delta);
+     for (let i = 0; i < 13; i++) {
+       if (currentStripeColors[i] && targetStripeColors[i]) {
+         currentStripeColors[i].lerp(targetStripeColors[i], lerpFactor);
+@@ -260,10 +238,13 @@ const animate = () => {
+     currentCantonColor.lerp(targetCantonColor, lerpFactor);
+     currentStarColor.lerp(targetStarColor, lerpFactor);
+ 
++    const targetRainbowMode = props.rainbowMode ? 1.0 : 0.0;
++    currentRainbowMode += (targetRainbowMode - currentRainbowMode) * lerpFactor;
++
+     flagMaterial.uniforms.uStripeColors.value = currentStripeColors;
+     flagMaterial.uniforms.uCantonColor.value = currentCantonColor;
+     flagMaterial.uniforms.uStarColor.value = currentStarColor;
+-    flagMaterial.uniforms.uRainbowMode.value = props.rainbowMode ? 1.0 : 0.0;
++    flagMaterial.uniforms.uRainbowMode.value = currentRainbowMode;
+   }
+ 
+   // 4. Auto-rotation of the scene camera
+diff --git a/src/shaders/flag.js b/src/shaders/flag.js
+index 7f70852..ca87135 100644
+--- a/src/shaders/flag.js
++++ b/src/shaders/flag.js
+@@ -86,15 +86,12 @@ float sdStar5(in vec2 p, in float r, in float rf) {
+ 
+ void main() {
+   // 1. Draw Stripes (13 horizontal bands)
+-  vec3 stripeColor;
+-  if (uRainbowMode > 0.5) {
+-    // Scrolling, very gay rainbow stripes
+-    stripeColor = hsv2rgb(vec3(fract(vUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
+-  } else {
+-    // 13 custom stripe colors (mapped from bottom to top)
+-    float stripeIndex = clamp(floor(vUv.y * 13.0), 0.0, 12.0);
+-    stripeColor = uStripeColors[int(stripeIndex)];
+-  }
++  // Blend continuously between the static theme stripes and the scrolling rainbow
++  // so switching themes crossfades instead of popping at the uRainbowMode midpoint.
++  float stripeIndex = clamp(floor(vUv.y * 13.0), 0.0, 12.0);
++  vec3 staticStripeColor = uStripeColors[int(stripeIndex)];
++  vec3 rainbowStripeColor = hsv2rgb(vec3(fract(vUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
++  vec3 stripeColor = mix(staticStripeColor, rainbowStripeColor, uRainbowMode);
+   
+   // 2. Draw Canton (Union - top left)
+   bool inCanton = (vUv.x < 0.4 && vUv.y > 6.0 / 13.0);
+@@ -116,13 +113,10 @@ void main() {
+     float glow = 0.0;
+     float starIntensity = 1.0;
+     vec3 activeStarColor = uStarColor;
+-    vec3 activeCantonBg = uCantonColor;
+-    
+-    if (uRainbowMode > 0.5) {
+-      // Dynamic shifting background for the canton in rainbow mode
+-      activeCantonBg = hsv2rgb(vec3(fract(uTime * 0.08), 0.9, 0.22));
+-    }
+-    
++    // Blend continuously between the static canton color and the shifting rainbow background
++    vec3 rainbowCantonBg = hsv2rgb(vec3(fract(uTime * 0.08), 0.9, 0.22));
++    vec3 activeCantonBg = mix(uCantonColor, rainbowCantonBg, uRainbowMode);
++
+     // Check if the nearest grid node is a valid star center
+     if (r >= 1.0 && r <= 9.0 && c >= 1.0 && c <= 11.0) {
+       bool isValidStar = false;
+@@ -149,18 +143,17 @@ void main() {
+         float d = sdStar5(localUv, 0.042, 0.381966);
+         starMask = smoothstep(0.0025, -0.0025, d);
+         
+-        // Star color & intensity calculation
++        // Star color & intensity calculation, blended continuously between the static
++        // theme's gentle sparkle and rainbow mode's pulsating per-star color cycle
+         float starPhase = r * 0.6 + c * 0.4;
+-        
+-        if (uRainbowMode > 0.5) {
+-          // Dynamic rainbow colors + pulsating intensity per star
+-          starIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
+-          activeStarColor = hsv2rgb(vec3(fract(uTime * 0.25 + starPhase * 0.15), 0.85, 1.0));
+-        } else {
+-          // Gentle sparkling animation even for static themes
+-          starIntensity = 0.8 + 0.2 * sin(uTime * 2.0 + starPhase);
+-        }
+-        
++
++        float staticIntensity = 0.8 + 0.2 * sin(uTime * 2.0 + starPhase);
++        float rainbowIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
++        starIntensity = mix(staticIntensity, rainbowIntensity, uRainbowMode);
++
++        vec3 rainbowStarColor = hsv2rgb(vec3(fract(uTime * 0.25 + starPhase * 0.15), 0.85, 1.0));
++        activeStarColor = mix(uStarColor, rainbowStarColor, uRainbowMode);
++
+         // Star glow halo effect outside the boundary (multiplied by borderFade)
+         glow = exp(-40.0 * max(d, 0.0)) * 0.32 * borderFade;
+         
+diff --git a/src/themes.js b/src/themes.js
+new file mode 100644
+index 0000000..999f4c4
+--- /dev/null
++++ b/src/themes.js
+@@ -0,0 +1,167 @@
++// Curated theme palettes mapping to the 13 stripes
++export const THEMES = {
++  classic: {
++    name: 'Old Glory',
++    stripeColors: [
++      '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234', '#FFFFFF',
++      '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234'
++    ],
++    cantonColor: '#3C3B6E',
++    starColor: '#FFFFFF',
++    rainbowMode: false
++  },
++  rainbowWave: {
++    name: 'Rainbow Wave 🏳️‍🌈',
++    stripeColors: Array(13).fill('#FF0000'), // generated procedurally on GPU
++    cantonColor: '#3C3B6E',
++    starColor: '#FFFFFF',
++    rainbowMode: true
++  },
++  pride6: {
++    name: 'Pride Rainbow',
++    stripeColors: [
++      '#782080', '#782080', // Violet (2 stripes)
++      '#0000FF', '#0000FF', // Blue (2 stripes)
++      '#008000', '#008000', // Green (2 stripes)
++      '#FFFF00', '#FFFF00', // Yellow (2 stripes)
++      '#FFA500', '#FFA500', // Orange (2 stripes)
++      '#FF0000', '#FF0000', '#FF0000' // Red (3 stripes)
++    ],
++    cantonColor: '#1a0e40',
++    starColor: '#FFFFFF',
++    rainbowMode: false
++  },
++  pride8: {
++    name: 'Gilbert Baker',
++    stripeColors: [
++      '#782080', // Violet
++      '#1a0f5c', // Indigo
++      '#00a2ff', '#00a2ff', // Turquoise
++      '#008000', // Green
++      '#FFFF00', '#FFFF00', // Yellow
++      '#FFA500', // Orange
++      '#FF0000', '#FF0000', // Red
++      '#ff69b4', '#ff69b4', '#ff69b4' // Pink
++    ],
++    cantonColor: '#2b104a',
++    starColor: '#FFFFFF',
++    rainbowMode: false
++  },
++  transgender: {
++    name: 'Trans Pride 🏳️‍⚧️',
++    stripeColors: [
++      '#5BCEFA', '#5BCEFA', '#5BCEFA', // Light Blue
++      '#F5A9B8', '#F5A9B8', '#F5A9B8', // Pink
++      '#FFFFFF', '#FFFFFF', // White
++      '#F5A9B8', '#F5A9B8', '#F5A9B8', // Pink
++      '#5BCEFA', '#5BCEFA' // Light Blue
++    ],
++    cantonColor: '#5BCEFA',
++    starColor: '#FFFFFF',
++    rainbowMode: false
++  },
++  bisexual: {
++    name: 'Bi Pride',
++    stripeColors: [
++      '#0038A8', '#0038A8', '#0038A8', '#0038A8', '#0038A8', // Blue
++      '#9B4F96', '#9B4F96', '#9B4F96', // Purple
++      '#D60270', '#D60270', '#D60270', '#D60270', '#D60270' // Pink
++    ],
++    cantonColor: '#9B4F96',
++    starColor: '#D60270',
++    rainbowMode: false
++  },
++  lesbian: {
++    name: 'Lesbian Pride',
++    stripeColors: [
++      '#A30262', '#A30262', '#A30262', // Dark Rose
++      '#C4408B', '#C4408B', // Pink
++      '#FFFFFF', '#FFFFFF', // White
++      '#E46222', '#E46222', '#E46222', // Light Orange
++      '#A50000', '#A50000', '#A50000' // Dark Orange
++    ],
++    cantonColor: '#A30262',
++    starColor: '#FFFFFF',
++    rainbowMode: false
++  },
++  nonbinary: {
++    name: 'Non-Binary',
++    stripeColors: [
++      '#000000', '#000000', '#000000', // Black
++      '#9C59D1', '#9C59D1', '#9C59D1', // Purple
++      '#FFFFFF', '#FFFFFF', '#FFFFFF', // White
++      '#FFF430', '#FFF430', '#FFF430', '#FFF430' // Yellow
++    ],
++    cantonColor: '#9C59D1',
++    starColor: '#FFF430',
++    rainbowMode: false
++  },
++  neonCyber: {
++    name: 'Neon Cyber ⚡',
++    stripeColors: [
++      '#8a2be2', '#8a2be2', // Neon Violet
++      '#ff007f', '#ff007f', // Neon Magenta
++      '#00f6ff', '#00f6ff', // Neon Cyan
++      '#8a2be2', '#8a2be2',
++      '#ff007f', '#ff007f',
++      '#00f6ff', '#00f6ff', '#00f6ff'
++    ],
++    cantonColor: '#ff007f',
++    starColor: '#39ff14', // Neon Green
++    rainbowMode: false
++  },
++  neonToxic: {
++    name: 'Neon Toxic ☢️',
++    stripeColors: [
++      '#000000', '#000000',
++      '#ff00ff', '#ff00ff', // Hot Pink
++      '#000000', '#000000',
++      '#39ff14', '#39ff14', // Slime Green
++      '#000000', '#000000',
++      '#ffff00', '#ffff00', '#ffff00' // Laser Yellow
++    ],
++    cantonColor: '#000000',
++    starColor: '#39ff14',
++    rainbowMode: false
++  },
++  monochrome: {
++    name: 'Monochrome 🌑',
++    stripeColors: [
++      '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0',
++      '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b'
++    ],
++    cantonColor: '#0f172a',
++    starColor: '#f8fafc',
++    rainbowMode: false
++  },
++  sunrise: {
++    name: 'Sunrise 🌅',
++    stripeColors: [
++      '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d',
++      '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b'
++    ],
++    cantonColor: '#4ecdc4',
++    starColor: '#ffffff',
++    rainbowMode: false
++  },
++  vaporwave: {
++    name: 'Vaporwave 🌊',
++    stripeColors: [
++      '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce', '#b967ff',
++      '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce'
++    ],
++    cantonColor: '#01cdfe',
++    starColor: '#fffb96',
++    rainbowMode: false
++  },
++  vintage: {
++    name: 'Vintage 📜',
++    stripeColors: [
++      '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1',
++      '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36'
++    ],
++    cantonColor: '#2c3e50',
++    starColor: '#e6dfd1',
++    rainbowMode: false
++  }
++};
+-- 
+2.43.0
+
