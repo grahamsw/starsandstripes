@@ -41,6 +41,42 @@
           <p class="subtitle">Procedural flag shader & real-time color animator</p>
         </header>
 
+        <!-- LED Matrix Emulator Section -->
+        <section class="section">
+          <h2 class="section-title">LED Matrix Emulator</h2>
+          
+          <label class="toggle-group mb-4">
+            <input type="checkbox" v-model="ledEmulation" />
+            <span class="toggle-label font-semibold">Enable LED Matrix Mode</span>
+          </label>
+
+          <div v-if="ledEmulation" class="control-group fade-in">
+            <div class="control-label mb-2">
+              <span>Grid Resolution</span>
+            </div>
+            <div class="resolution-options">
+              <label class="radio-label">
+                <input type="radio" value="64x32" v-model="selectedResolution" />
+                <span>64x32 (Retro)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" value="74x39" v-model="selectedResolution" />
+                <span>74x39 (Custom)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" value="128x64" v-model="selectedResolution" />
+                <span>128x64 (Detail)</span>
+              </label>
+            </div>
+            
+            <div class="resolution-info glass-panel-dark">
+              <p><strong>Total LEDs:</strong> {{ (ledWidth * ledHeight).toLocaleString() }} bulbs</p>
+              <p><strong>Stripe Height:</strong> {{ selectedResolution === '74x39' ? '3 LEDs (Perfect integer)' : (selectedResolution === '64x32' ? '~2.46 LEDs (Scaled)' : '~4.92 LEDs (Scaled)') }}</p>
+              <p><strong>Star Rendering:</strong> {{ selectedResolution === '128x64' ? '3x3 Pixel detailed stars' : '1-Pixel glowing points' }}</p>
+            </div>
+          </div>
+        </section>
+
         <!-- Color Themes Section -->
         <section class="section">
           <h2 class="section-title">Color Themes</h2>
@@ -108,42 +144,6 @@
                 </div>
                 <span>Stars</span>
               </label>
-            </div>
-          </div>
-        </section>
-
-        <!-- LED Matrix Emulator Section -->
-        <section class="section">
-          <h2 class="section-title">LED Matrix Emulator</h2>
-          
-          <label class="toggle-group mb-4">
-            <input type="checkbox" v-model="ledEmulation" />
-            <span class="toggle-label font-semibold">Enable LED Matrix Mode</span>
-          </label>
-
-          <div v-if="ledEmulation" class="control-group fade-in">
-            <div class="control-label mb-2">
-              <span>Grid Resolution</span>
-            </div>
-            <div class="resolution-options">
-              <label class="radio-label">
-                <input type="radio" value="64x32" v-model="selectedResolution" />
-                <span>64x32 (Retro)</span>
-              </label>
-              <label class="radio-label">
-                <input type="radio" value="74x39" v-model="selectedResolution" />
-                <span>74x39 (Custom)</span>
-              </label>
-              <label class="radio-label">
-                <input type="radio" value="128x64" v-model="selectedResolution" />
-                <span>128x64 (Detail)</span>
-              </label>
-            </div>
-            
-            <div class="resolution-info glass-panel-dark">
-              <p><strong>Total LEDs:</strong> {{ (ledWidth * ledHeight).toLocaleString() }} bulbs</p>
-              <p><strong>Stripe Height:</strong> {{ selectedResolution === '74x39' ? '3 LEDs (Perfect integer)' : (selectedResolution === '64x32' ? '~2.46 LEDs (Scaled)' : '~4.92 LEDs (Scaled)') }}</p>
-              <p><strong>Star Rendering:</strong> {{ selectedResolution === '128x64' ? '3x3 Pixel detailed stars' : '1-Pixel glowing points' }}</p>
             </div>
           </div>
         </section>
