@@ -59,6 +59,21 @@ const props = defineProps({
   shininess: {
     type: Number,
     default: 25.0
+  },
+  // LED Emulation Mode
+  ledEmulation: {
+    type: Boolean,
+    default: false
+  },
+  // LED Grid Width
+  ledWidth: {
+    type: Number,
+    default: 64
+  },
+  // LED Grid Height
+  ledHeight: {
+    type: Number,
+    default: 32
   }
 });
 
@@ -85,6 +100,9 @@ const currentStarColor = new THREE.Color(props.starColor);
 // Current rainbow-mode blend (0 = static theme colors, 1 = rainbow), eased toward target each frame
 let currentRainbowMode = props.rainbowMode ? 1.0 : 0.0;
 
+// Current LED emulation blend (0 = smooth, 1 = LED matrix)
+let currentLedEmulation = props.ledEmulation ? 1.0 : 0.0;
+
 // Watchers to update target colors when props change
 watch(() => props.stripeColors, (newVal) => {
   newVal.forEach((hex, i) => {
@@ -96,6 +114,12 @@ watch(() => props.stripeColors, (newVal) => {
 
 watch(() => props.cantonColor, (newVal) => targetCantonColor.set(newVal));
 watch(() => props.starColor, (newVal) => targetStarColor.set(newVal));
+
+watch(() => [props.ledWidth, props.ledHeight], ([newWidth, newHeight]) => {
+  if (flagMaterial) {
+    flagMaterial.uniforms.uLedResolution.value.set(newWidth, newHeight);
+  }
+});
 
 onMounted(() => {
   initThree();
@@ -194,7 +218,9 @@ const initThree = () => {
       uCantonColor: { value: currentCantonColor },
       uStarColor: { value: currentStarColor },
       uRainbowMode: { value: props.rainbowMode ? 1.0 : 0.0 },
-      uShininess: { value: props.shininess }
+      uShininess: { value: props.shininess },
+      uLedEmulation: { value: props.ledEmulation ? 1.0 : 0.0 },
+      uLedResolution: { value: new THREE.Vector2(props.ledWidth, props.ledHeight) }
     },
     side: THREE.DoubleSide,
     transparent: false
@@ -241,10 +267,14 @@ const animate = () => {
     const targetRainbowMode = props.rainbowMode ? 1.0 : 0.0;
     currentRainbowMode += (targetRainbowMode - currentRainbowMode) * lerpFactor;
 
+    const targetLedEmulation = props.ledEmulation ? 1.0 : 0.0;
+    currentLedEmulation += (targetLedEmulation - currentLedEmulation) * lerpFactor;
+
     flagMaterial.uniforms.uStripeColors.value = currentStripeColors;
     flagMaterial.uniforms.uCantonColor.value = currentCantonColor;
     flagMaterial.uniforms.uStarColor.value = currentStarColor;
     flagMaterial.uniforms.uRainbowMode.value = currentRainbowMode;
+    flagMaterial.uniforms.uLedEmulation.value = currentLedEmulation;
   }
 
   // 4. Auto-rotation of the scene camera

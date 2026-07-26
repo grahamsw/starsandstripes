@@ -12,6 +12,9 @@
       :rainbow-mode="rainbowMode"
       :auto-rotate="controls.autoRotate"
       :shininess="controls.shininess"
+      :led-emulation="ledEmulation"
+      :led-width="ledWidth"
+      :led-height="ledHeight"
     />
 
     <!-- Floating Show Button (Visible only when panel is collapsed) -->
@@ -109,6 +112,42 @@
           </div>
         </section>
 
+        <!-- LED Matrix Emulator Section -->
+        <section class="section">
+          <h2 class="section-title">LED Matrix Emulator</h2>
+          
+          <label class="toggle-group mb-4">
+            <input type="checkbox" v-model="ledEmulation" />
+            <span class="toggle-label font-semibold">Enable LED Matrix Mode</span>
+          </label>
+
+          <div v-if="ledEmulation" class="control-group fade-in">
+            <div class="control-label mb-2">
+              <span>Grid Resolution</span>
+            </div>
+            <div class="resolution-options">
+              <label class="radio-label">
+                <input type="radio" value="64x32" v-model="selectedResolution" />
+                <span>64x32 (Retro)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" value="74x39" v-model="selectedResolution" />
+                <span>74x39 (Custom)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" value="128x64" v-model="selectedResolution" />
+                <span>128x64 (Detail)</span>
+              </label>
+            </div>
+            
+            <div class="resolution-info glass-panel-dark">
+              <p><strong>Total LEDs:</strong> {{ (ledWidth * ledHeight).toLocaleString() }} bulbs</p>
+              <p><strong>Stripe Height:</strong> {{ selectedResolution === '74x39' ? '3 LEDs (Perfect integer)' : (selectedResolution === '64x32' ? '~2.46 LEDs (Scaled)' : '~4.92 LEDs (Scaled)') }}</p>
+              <p><strong>Star Rendering:</strong> {{ selectedResolution === '128x64' ? '3x3 Pixel detailed stars' : '1-Pixel glowing points' }}</p>
+            </div>
+          </div>
+        </section>
+
         <!-- Wave / Physics Simulation Section -->
         <section class="section">
           <h2 class="section-title">Wind & Simulation</h2>
@@ -199,6 +238,22 @@ const controls = reactive({
 const isSidebarCollapsed = ref(false);
 const isCycling = ref(false);
 let cycleInterval = null;
+
+// LED Matrix Emulation State
+const ledEmulation = ref(false);
+const selectedResolution = ref('64x32');
+
+const ledWidth = computed(() => {
+  if (selectedResolution.value === '128x64') return 128;
+  if (selectedResolution.value === '74x39') return 74;
+  return 64;
+});
+
+const ledHeight = computed(() => {
+  if (selectedResolution.value === '128x64') return 64;
+  if (selectedResolution.value === '74x39') return 39;
+  return 32;
+});
 
 // Helper to determine dot colors for theme previews
 const getThemePreviewColor = (theme, index) => {
@@ -654,6 +709,112 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
   line-height: 1.4;
   text-align: center;
+}
+
+/* LED Matrix Emulation Section Styles */
+.mb-4 {
+  margin-bottom: 16px;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.resolution-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  background: rgba(0, 0, 0, 0.20);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition-smooth);
+}
+
+.radio-label:hover {
+  color: var(--text-primary);
+}
+
+.radio-label input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-panel);
+  border-radius: 50%;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-smooth);
+  background: transparent;
+}
+
+.radio-label input[type="radio"]::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+  transition: var(--transition-smooth);
+}
+
+.radio-label input[type="radio"]:checked {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.radio-label input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+.resolution-info {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resolution-info p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.resolution-info strong {
+  color: var(--text-secondary);
+}
+
+.fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Responsiveness */

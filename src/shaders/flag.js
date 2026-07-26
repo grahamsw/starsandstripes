@@ -58,6 +58,8 @@ uniform vec3 uStarColor;
 uniform float uRainbowMode;
 uniform float uTime;
 uniform float uShininess;
+uniform float uLedEmulation;
+uniform vec2 uLedResolution;
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -85,22 +87,26 @@ float sdStar5(in vec2 p, in float r, in float rf) {
 }
 
 void main() {
+  // Quantize coordinates if LED emulation is active
+  vec2 uvLed = (floor(vUv * uLedResolution) + vec2(0.5)) / uLedResolution;
+  vec2 sampleUv = mix(vUv, uvLed, uLedEmulation);
+
   // 1. Draw Stripes (13 horizontal bands)
   // Blend continuously between the static theme stripes and the scrolling rainbow
   // so switching themes crossfades instead of popping at the uRainbowMode midpoint.
-  float stripeIndex = clamp(floor(vUv.y * 13.0), 0.0, 12.0);
+  float stripeIndex = clamp(floor(sampleUv.y * 13.0), 0.0, 12.0);
   vec3 staticStripeColor = uStripeColors[int(stripeIndex)];
-  vec3 rainbowStripeColor = hsv2rgb(vec3(fract(vUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
+  vec3 rainbowStripeColor = hsv2rgb(vec3(fract(sampleUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
   vec3 stripeColor = mix(staticStripeColor, rainbowStripeColor, uRainbowMode);
   
   // 2. Draw Canton (Union - top left)
-  bool inCanton = (vUv.x < 0.4 && vUv.y > 6.0 / 13.0);
+  bool inCanton = (sampleUv.x < 0.4 && sampleUv.y > 6.0 / 13.0);
   
   vec3 cantonColor = uCantonColor;
   
   if (inCanton) {
     // Normalize coordinates inside the canton to [0.0, 1.0]
-    vec2 cUv = vec2(vUv.x / 0.4, (vUv.y - 6.0 / 13.0) / (7.0 / 13.0));
+    vec2 cUv = vec2(sampleUv.x / 0.4, (sampleUv.y - 6.0 / 13.0) / (7.0 / 13.0));
     
     // Grid coordinate calculations for the 50 stars
     float rowF = cUv.y * 10.0;
@@ -170,6 +176,21 @@ void main() {
   
   // Base flag color
   vec3 flagColor = inCanton ? cantonColor : stripeColor;
+  
+  // Apply LED grid mask and dome hotspot glow if emulation is active
+  if (uLedEmulation > 0.0) {
+    vec2 localCellUv = fract(vUv * uLedResolution);
+    float distFromCenter = length(localCellUv - vec2(0.5));
+    
+    // Circular LED bulb boundary with smooth anti-aliased edge (radius = 0.43)
+    float ledMask = smoothstep(0.43, 0.39, distFromCenter);
+    
+    // Center hotspot mimicking physical LED dome light dispersion
+    float hotSpot = exp(-6.0 * distFromCenter) * 0.45;
+    
+    vec3 ledColor = flagColor * (ledMask + hotSpot);
+    flagColor = mix(flagColor, ledColor, uLedEmulation);
+  }
   
   // 3. Shading & Lighting (Double-sided Blinn-Phong)
   vec3 V = normalize(-vPosition);
