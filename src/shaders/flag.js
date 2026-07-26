@@ -108,9 +108,23 @@ void main() {
     // Normalize coordinates inside the canton to [0.0, 1.0]
     vec2 cUv = vec2(sampleUv.x / 0.4, (sampleUv.y - 6.0 / 13.0) / (7.0 / 13.0));
     
+    // Get the physical LED grid boundaries of the canton dynamically
+    float cantonW = floor(uLedResolution.x * 0.4 - 0.5) + 1.0;
+    float cantonH = uLedResolution.y - ceil(uLedResolution.y * 6.0 / 13.0 - 0.5);
+    
+    // Local integer pixel coordinate of the current LED cell inside the canton
+    float px_local = floor(sampleUv.x * uLedResolution.x);
+    float py_local = floor(sampleUv.y * uLedResolution.y) - (uLedResolution.y - cantonH);
+    
+    // Normalized canton coordinates mapped exactly to the LED pixel grid
+    vec2 cUv_led = (vec2(px_local, py_local) + vec2(0.5)) / vec2(cantonW, cantonH);
+    
+    // Interpolate canton coordinate space based on LED emulation mode
+    vec2 activeCUv = mix(cUv, cUv_led, uLedEmulation);
+    
     // Grid coordinate calculations for the 50 stars
-    float rowF = cUv.y * 10.0;
-    float colF = cUv.x * 12.0;
+    float rowF = activeCUv.y * 10.0;
+    float colF = activeCUv.x * 12.0;
     
     float r = floor(rowF + 0.5);
     float c = floor(colF + 0.5);
@@ -135,11 +149,11 @@ void main() {
       if (isValidStar) {
         vec2 starCenter = vec2(c / 12.0, r / 10.0);
         
-        // Snapping the star center to the nearest LED grid coordinate to prevent spatial grid aliasing
-        vec2 starCenterPixels = (floor(starCenter * uLedResolution) + vec2(0.5)) / uLedResolution;
+        // Snap the star center (in canton coordinates) to the nearest LED pixel center in canton pixels
+        vec2 starCenterPixels = (floor(starCenter * vec2(cantonW, cantonH)) + vec2(0.5)) / vec2(cantonW, cantonH);
         vec2 snappedStarCenter = mix(starCenter, starCenterPixels, uLedEmulation);
         
-        vec2 localUv = cUv - snappedStarCenter;
+        vec2 localUv = activeCUv - snappedStarCenter;
         
         // Compute boundary fade using unscaled localUv to prevent square grid seams in the glow
         // Spacing is 0.0416 (half-width) and 0.05 (half-height) in canton coordinates
