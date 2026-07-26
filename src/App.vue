@@ -1,0 +1,865 @@
+<template>
+  <main class="app-container">
+    <!-- WebGL Canvas Background -->
+    <FlagCanvas
+      :speed="controls.speed"
+      :amplitude="controls.amplitude"
+      :frequency-x="controls.frequencyX"
+      :frequency-y="controls.frequencyY"
+      :stripe-colors="stripeColors"
+      :canton-color="cantonColor"
+      :star-color="starColor"
+      :rainbow-mode="rainbowMode"
+      :auto-rotate="controls.autoRotate"
+      :shininess="controls.shininess"
+    />
+
+    <!-- Floating Show Button (Visible only when panel is collapsed) -->
+    <button 
+      v-if="isSidebarCollapsed"
+      class="show-controls-btn glass-panel" 
+      @click="toggleSidebar" 
+      aria-label="Show Controls"
+    >
+      <span class="toggle-text">☰ Controls</span>
+    </button>
+
+    <!-- Dashboard Sidebar Panel -->
+    <aside class="dashboard glass-panel" :class="{ 'collapsed': isSidebarCollapsed }">
+      <!-- Close Button (Inside panel, top right) -->
+      <button class="hide-controls-btn" @click="toggleSidebar" aria-label="Hide Controls">
+        ✕
+      </button>
+      <div class="dashboard-content">
+        <!-- Header -->
+        <header class="header">
+          <div class="badge">WebGL 3D Studio</div>
+          <h1 class="title">STARS & STRIPES</h1>
+          <p class="subtitle">Procedural flag shader & real-time color animator</p>
+        </header>
+
+        <!-- Color Themes Section -->
+        <section class="section">
+          <h2 class="section-title">Color Themes</h2>
+          
+          <div class="theme-grid">
+            <button 
+              v-for="(theme, key) in THEMES" 
+              :key="key"
+              class="theme-card"
+              :class="{ 'active': activeThemeKey === key }"
+              @click="selectTheme(key, true)"
+            >
+              <div class="theme-colors">
+                <span class="color-dot" :style="{ backgroundColor: getThemePreviewColor(theme, 0) }"></span>
+                <span class="color-dot" :style="{ backgroundColor: getThemePreviewColor(theme, 1) }"></span>
+                <span class="color-dot" :style="{ backgroundColor: getThemePreviewColor(theme, 2) }"></span>
+              </div>
+              <span class="theme-name">{{ theme.name }}</span>
+            </button>
+          </div>
+          
+          <!-- Auto Cycle Toggle -->
+          <button 
+            class="cycle-btn" 
+            :class="{ 'cycling': isCycling }" 
+            @click="toggleCycle"
+          >
+            <span class="cycle-indicator"></span>
+            {{ isCycling ? 'Auto-Cycling Active' : 'Enable Auto-Cycle' }}
+          </button>
+        </section>
+
+        <!-- Custom Color Customizer -->
+        <section class="section">
+          <h2 class="section-title">Custom Palette</h2>
+          <div class="custom-palette">
+            <div class="color-picker-group">
+              <label>
+                <div class="color-preview" :style="{ backgroundColor: activeColors.stripeA }">
+                  <input type="color" v-model="activeColors.stripeA" @input="onCustomColorChange" />
+                </div>
+                <span>Stripe A</span>
+              </label>
+            </div>
+            <div class="color-picker-group">
+              <label>
+                <div class="color-preview" :style="{ backgroundColor: activeColors.stripeB }">
+                  <input type="color" v-model="activeColors.stripeB" @input="onCustomColorChange" />
+                </div>
+                <span>Stripe B</span>
+              </label>
+            </div>
+            <div class="color-picker-group">
+              <label>
+                <div class="color-preview" :style="{ backgroundColor: activeColors.canton }">
+                  <input type="color" v-model="activeColors.canton" @input="onCustomColorChange" />
+                </div>
+                <span>Canton</span>
+              </label>
+            </div>
+            <div class="color-picker-group">
+              <label>
+                <div class="color-preview" :style="{ backgroundColor: activeColors.star }">
+                  <input type="color" v-model="activeColors.star" @input="onCustomColorChange" />
+                </div>
+                <span>Stars</span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <!-- Wave / Physics Simulation Section -->
+        <section class="section">
+          <h2 class="section-title">Wind & Simulation</h2>
+          
+          <div class="control-group">
+            <div class="control-label">
+              <span>Wind Velocity</span>
+              <span class="control-val">{{ controls.speed.toFixed(1) }}</span>
+            </div>
+            <input type="range" min="0.5" max="5.0" step="0.1" v-model.number="controls.speed" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Wave Amplitude</span>
+              <span class="control-val">{{ controls.amplitude.toFixed(2) }}</span>
+            </div>
+            <input type="range" min="0.01" max="0.30" step="0.01" v-model.number="controls.amplitude" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Wave Frequency X</span>
+              <span class="control-val">{{ controls.frequencyX.toFixed(1) }}</span>
+            </div>
+            <input type="range" min="1.0" max="10.0" step="0.1" v-model.number="controls.frequencyX" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Wave Frequency Y</span>
+              <span class="control-val">{{ controls.frequencyY.toFixed(1) }}</span>
+            </div>
+            <input type="range" min="1.0" max="10.0" step="0.1" v-model.number="controls.frequencyY" />
+          </div>
+        </section>
+
+        <!-- Camera & Material Settings -->
+        <section class="section">
+          <h2 class="section-title">Camera & Material</h2>
+          
+          <div class="control-group">
+            <div class="control-label">
+              <span>Fabric Reflectivity</span>
+              <span class="control-val">{{ controls.shininess.toFixed(0) }}</span>
+            </div>
+            <input type="range" min="5.0" max="100.0" step="1" v-model.number="controls.shininess" />
+          </div>
+
+          <label class="toggle-group">
+            <input type="checkbox" v-model="controls.autoRotate" />
+            <span class="toggle-label">Auto Orbit Camera</span>
+          </label>
+        </section>
+      </div>
+
+      <!-- Footer Info -->
+      <footer class="footer">
+        <p>Rotate camera with mouse/drag. Pinch to zoom.</p>
+        <p>Shader: GPU Vertex Displacement + SDF stars</p>
+      </footer>
+    </aside>
+  </main>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
+import FlagCanvas from './components/FlagCanvas.vue';
+
+// Curated theme palettes mapping to the 13 stripes
+const THEMES = {
+  classic: {
+    name: 'Old Glory',
+    stripeColors: [
+      '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234', '#FFFFFF',
+      '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234', '#FFFFFF', '#B22234'
+    ],
+    cantonColor: '#3C3B6E',
+    starColor: '#FFFFFF',
+    rainbowMode: false
+  },
+  rainbowWave: {
+    name: 'Rainbow Wave 🏳️‍🌈',
+    stripeColors: Array(13).fill('#FF0000'), // generated procedurally on GPU
+    cantonColor: '#3C3B6E',
+    starColor: '#FFFFFF',
+    rainbowMode: true
+  },
+  pride6: {
+    name: 'Pride Rainbow',
+    stripeColors: [
+      '#782080', '#782080', // Violet (2 stripes)
+      '#0000FF', '#0000FF', // Blue (2 stripes)
+      '#008000', '#008000', // Green (2 stripes)
+      '#FFFF00', '#FFFF00', // Yellow (2 stripes)
+      '#FFA500', '#FFA500', // Orange (2 stripes)
+      '#FF0000', '#FF0000', '#FF0000' // Red (3 stripes)
+    ],
+    cantonColor: '#1a0e40',
+    starColor: '#FFFFFF',
+    rainbowMode: false
+  },
+  pride8: {
+    name: 'Gilbert Baker',
+    stripeColors: [
+      '#782080', // Violet
+      '#1a0f5c', // Indigo
+      '#00a2ff', '#00a2ff', // Turquoise
+      '#008000', // Green
+      '#FFFF00', '#FFFF00', // Yellow
+      '#FFA500', // Orange
+      '#FF0000', '#FF0000', // Red
+      '#ff69b4', '#ff69b4', '#ff69b4' // Pink
+    ],
+    cantonColor: '#2b104a',
+    starColor: '#FFFFFF',
+    rainbowMode: false
+  },
+  transgender: {
+    name: 'Trans Pride 🏳️‍⚧️',
+    stripeColors: [
+      '#5BCEFA', '#5BCEFA', '#5BCEFA', // Light Blue
+      '#F5A9B8', '#F5A9B8', '#F5A9B8', // Pink
+      '#FFFFFF', '#FFFFFF', // White
+      '#F5A9B8', '#F5A9B8', '#F5A9B8', // Pink
+      '#5BCEFA', '#5BCEFA' // Light Blue
+    ],
+    cantonColor: '#5BCEFA',
+    starColor: '#FFFFFF',
+    rainbowMode: false
+  },
+  bisexual: {
+    name: 'Bi Pride',
+    stripeColors: [
+      '#0038A8', '#0038A8', '#0038A8', '#0038A8', '#0038A8', // Blue
+      '#9B4F96', '#9B4F96', '#9B4F96', // Purple
+      '#D60270', '#D60270', '#D60270', '#D60270', '#D60270' // Pink
+    ],
+    cantonColor: '#9B4F96',
+    starColor: '#D60270',
+    rainbowMode: false
+  },
+  lesbian: {
+    name: 'Lesbian Pride',
+    stripeColors: [
+      '#A30262', '#A30262', '#A30262', // Dark Rose
+      '#C4408B', '#C4408B', // Pink
+      '#FFFFFF', '#FFFFFF', // White
+      '#E46222', '#E46222', '#E46222', // Light Orange
+      '#A50000', '#A50000', '#A50000' // Dark Orange
+    ],
+    cantonColor: '#A30262',
+    starColor: '#FFFFFF',
+    rainbowMode: false
+  },
+  nonbinary: {
+    name: 'Non-Binary',
+    stripeColors: [
+      '#000000', '#000000', '#000000', // Black
+      '#9C59D1', '#9C59D1', '#9C59D1', // Purple
+      '#FFFFFF', '#FFFFFF', '#FFFFFF', // White
+      '#FFF430', '#FFF430', '#FFF430', '#FFF430' // Yellow
+    ],
+    cantonColor: '#9C59D1',
+    starColor: '#FFF430',
+    rainbowMode: false
+  },
+  neonCyber: {
+    name: 'Neon Cyber ⚡',
+    stripeColors: [
+      '#8a2be2', '#8a2be2', // Neon Violet
+      '#ff007f', '#ff007f', // Neon Magenta
+      '#00f6ff', '#00f6ff', // Neon Cyan
+      '#8a2be2', '#8a2be2',
+      '#ff007f', '#ff007f',
+      '#00f6ff', '#00f6ff', '#00f6ff'
+    ],
+    cantonColor: '#ff007f',
+    starColor: '#39ff14', // Neon Green
+    rainbowMode: false
+  },
+  neonToxic: {
+    name: 'Neon Toxic ☢️',
+    stripeColors: [
+      '#000000', '#000000',
+      '#ff00ff', '#ff00ff', // Hot Pink
+      '#000000', '#000000',
+      '#39ff14', '#39ff14', // Slime Green
+      '#000000', '#000000',
+      '#ffff00', '#ffff00', '#ffff00' // Laser Yellow
+    ],
+    cantonColor: '#000000',
+    starColor: '#39ff14',
+    rainbowMode: false
+  },
+  monochrome: {
+    name: 'Monochrome 🌑',
+    stripeColors: [
+      '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0',
+      '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b', '#e2e8f0', '#2b2b2b'
+    ],
+    cantonColor: '#0f172a',
+    starColor: '#f8fafc',
+    rainbowMode: false
+  },
+  sunrise: {
+    name: 'Sunrise 🌅',
+    stripeColors: [
+      '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d',
+      '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b', '#ffe66d', '#ff6b6b'
+    ],
+    cantonColor: '#4ecdc4',
+    starColor: '#ffffff',
+    rainbowMode: false
+  },
+  vaporwave: {
+    name: 'Vaporwave 🌊',
+    stripeColors: [
+      '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce', '#b967ff',
+      '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce', '#b967ff', '#ff71ce'
+    ],
+    cantonColor: '#01cdfe',
+    starColor: '#fffb96',
+    rainbowMode: false
+  },
+  vintage: {
+    name: 'Vintage 📜',
+    stripeColors: [
+      '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1',
+      '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36', '#e6dfd1', '#c05c36'
+    ],
+    cantonColor: '#2c3e50',
+    starColor: '#e6dfd1',
+    rainbowMode: false
+  }
+};
+
+const activeThemeKey = ref('rainbowWave');
+const activeColors = reactive({
+  stripeA: '#ff0055',
+  stripeB: '#00f6ff',
+  canton: '#18003c',
+  star: '#ffff00'
+});
+
+const controls = reactive({
+  speed: 2.2,
+  amplitude: 0.11,
+  frequencyX: 4.2,
+  frequencyY: 2.4,
+  shininess: 25.0,
+  autoRotate: false
+});
+
+const isSidebarCollapsed = ref(false);
+const isCycling = ref(false);
+let cycleInterval = null;
+
+// Helper to determine dot colors for theme previews
+const getThemePreviewColor = (theme, index) => {
+  if (theme.rainbowMode) {
+    if (index === 0) return '#ff007f'; // Pink
+    if (index === 1) return '#39ff14'; // Green
+    return '#00f6ff'; // Cyan
+  }
+  if (index === 0) return theme.stripeColors[12]; // Stripe A color (top)
+  if (index === 1) return theme.stripeColors[11]; // Stripe B color
+  return theme.cantonColor; // Canton color
+};
+
+// Computed properties to feed into FlagCanvas
+const stripeColors = computed(() => {
+  if (activeThemeKey.value === 'custom') {
+    return Array(13).fill().map((_, i) => (i % 2 === 0 ? activeColors.stripeA : activeColors.stripeB));
+  }
+  return THEMES[activeThemeKey.value].stripeColors;
+});
+
+const cantonColor = computed(() => {
+  if (activeThemeKey.value === 'custom') {
+    return activeColors.canton;
+  }
+  return THEMES[activeThemeKey.value].cantonColor;
+});
+
+const starColor = computed(() => {
+  if (activeThemeKey.value === 'custom') {
+    return activeColors.star;
+  }
+  return THEMES[activeThemeKey.value].starColor;
+});
+
+const rainbowMode = computed(() => {
+  if (activeThemeKey.value === 'custom') {
+    return false;
+  }
+  return THEMES[activeThemeKey.value].rainbowMode;
+});
+
+const toggleSidebar = () => {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value;
+};
+
+const selectTheme = (key, isManual = false) => {
+  activeThemeKey.value = key;
+  if (key !== 'custom') {
+    const theme = THEMES[key];
+    if (!theme.rainbowMode) {
+      activeColors.stripeA = theme.stripeColors[12];
+      activeColors.stripeB = theme.stripeColors[11];
+      activeColors.canton = theme.cantonColor;
+      activeColors.star = theme.starColor;
+    }
+  }
+  
+  if (isManual) {
+    stopCycling();
+  }
+};
+
+const onCustomColorChange = () => {
+  activeThemeKey.value = 'custom';
+  stopCycling();
+};
+
+// Cycle through themes automatically
+const startCycling = () => {
+  isCycling.value = true;
+  let keys = Object.keys(THEMES);
+  let index = keys.indexOf(activeThemeKey.value);
+  if (index === -1) index = 0;
+  
+  cycleInterval = setInterval(() => {
+    index = (index + 1) % keys.length;
+    selectTheme(keys[index], false);
+  }, 4800); // 4.8 seconds per theme
+};
+
+const stopCycling = () => {
+  isCycling.value = false;
+  if (cycleInterval) {
+    clearInterval(cycleInterval);
+    cycleInterval = null;
+  }
+};
+
+const toggleCycle = () => {
+  if (isCycling.value) {
+    stopCycling();
+  } else {
+    startCycling();
+  }
+};
+
+onMounted(() => {
+  startCycling();
+});
+
+onBeforeUnmount(() => {
+  stopCycling();
+});
+</script>
+
+<style scoped>
+.app-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #07080a;
+}
+
+/* Sidebar Dashboard */
+.dashboard {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  bottom: 20px;
+  width: 360px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  color: var(--text-primary);
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: calc(100vw - 40px);
+  transition: var(--transition-smooth);
+}
+
+.dashboard.collapsed {
+  transform: translateX(-390px);
+}
+
+.show-controls-btn {
+  position: fixed;
+  left: 20px;
+  top: 40px;
+  height: 40px;
+  padding: 0 16px;
+  z-index: 100;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: var(--radius-md);
+  transition: var(--transition-smooth);
+  pointer-events: auto;
+}
+
+.show-controls-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.hide-controls-btn {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  transition: var(--transition-smooth);
+  z-index: 15;
+}
+
+.hide-controls-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+.dashboard-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Header */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 16px;
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent);
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.title {
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* Sections */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Themes */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.theme-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: var(--transition-smooth);
+}
+
+.theme-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-card.active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+}
+
+.theme-colors {
+  display: flex;
+  gap: 4px;
+}
+
+.color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.theme-card.active .theme-name {
+  color: var(--text-primary);
+}
+
+/* Cycle Button */
+.cycle-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: var(--transition-smooth);
+}
+
+.cycle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.cycle-btn.cycling {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: var(--accent);
+}
+
+.cycle-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.cycling .cycle-indicator {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse-glow 1.5s infinite ease-in-out;
+}
+
+/* Custom Palette */
+.custom-palette {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.color-picker-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-picker-group label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  gap: 6px;
+}
+
+.color-picker-group span {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
+.color-preview {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transition: var(--transition-smooth);
+}
+
+.color-preview:hover {
+  transform: scale(1.1);
+  border-color: var(--text-primary);
+}
+
+.color-preview input[type="color"] {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  width: 60px;
+  height: 60px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  opacity: 0;
+}
+
+/* Slider Controls */
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.control-val {
+  font-family: monospace;
+  color: var(--accent);
+}
+
+.toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.toggle-group input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.toggle-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Footer */
+.footer {
+  margin-top: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.footer p {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Responsiveness */
+@media (max-width: 500px) {
+  .dashboard {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 60vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    transform: translateY(0);
+    max-width: 100%;
+    padding: 16px;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+  }
+  
+  .dashboard.collapsed {
+    transform: translateY(60vh);
+  }
+  
+  .show-controls-btn {
+    left: auto;
+    right: 20px;
+    top: auto;
+    bottom: 20px;
+    height: 36px;
+    padding: 0 12px;
+    font-size: 0.75rem;
+    border-radius: var(--radius-sm);
+  }
+  
+  .hide-controls-btn {
+    top: 16px;
+    right: 16px;
+    width: 26px;
+    height: 26px;
+    font-size: 0.7rem;
+  }
+}
+</style>
