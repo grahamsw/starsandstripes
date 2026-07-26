@@ -61,6 +61,7 @@ uniform float uTime;
 uniform float uShininess;
 uniform float uLedEmulation;
 uniform vec2 uLedResolution;
+uniform vec2 uFrequency;
 
 varying vec2 vUv;
 varying vec3 vNormal;
