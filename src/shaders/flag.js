@@ -3,6 +3,7 @@ uniform float uTime;
 uniform float uSpeed;
 uniform float uAmplitude;
 uniform vec2 uFrequency;
+uniform float uLedEmulation;
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -20,7 +21,7 @@ float getWaveHeight(vec2 pos) {
   // Wave 2: higher-frequency secondary wave for organic cloth jitter
   float w2 = sin(pos.x * uFrequency.x * 2.2 + pos.y * uFrequency.y * 1.3 - uTime * uSpeed * 1.6) * 0.35;
   
-  return (w1 + w2) * uAmplitude * pinFactor;
+  return (w1 + w2) * uAmplitude * pinFactor * (1.0 - uLedEmulation);
 }
 
 void main() {
@@ -218,7 +219,7 @@ void main() {
     flagColor = mix(flagColor, ledColor, uLedEmulation);
   }
   
-  // 3. Shading & Lighting (Double-sided Blinn-Phong)
+  // 3. Shading & Lighting (Double-sided Blinn-Phong for fabric mode, self-lit waves for LED mode)
   vec3 V = normalize(-vPosition);
   vec3 N = normalize(vNormal);
   
@@ -227,16 +228,22 @@ void main() {
     N = -N;
   }
   
-  // View-space light directions (soft spotlight lighting)
+  // Fabric lighting (ambient + diffuse + specular spotlight)
   vec3 L = normalize(vec3(0.5, 0.6, 0.8));
   vec3 H = normalize(L + V);
-  
-  // Ambient, diffuse, and specular terms
   float ambient = 0.32;
   float diffuse = max(dot(N, L), 0.0) * 0.68;
   float specular = pow(max(dot(N, H), 0.0), uShininess) * 0.25;
+  vec3 fabricColor = flagColor * (ambient + diffuse) + vec3(specular);
   
-  vec3 finalColor = flagColor * (ambient + diffuse) + vec3(specular);
+  // LED Emulated Wave Lighting (self-illuminating diagonal bands)
+  // Uses physics frequency & speed so wind velocity adjustments update the light wave dynamically.
+  float ledWavePhase = sampleUv.x * uFrequency.x * 0.65 + sampleUv.y * uFrequency.y * 0.65 - uTime * uSpeed;
+  float ledShading = 0.76 + 0.24 * sin(ledWavePhase);
+  vec3 ledLitColor = flagColor * ledShading;
+  
+  // Blend between 3D-shaded fabric and flat self-lit LED matrix
+  vec3 finalColor = mix(fabricColor, ledLitColor, uLedEmulation);
   
   gl_FragColor = vec4(finalColor, 1.0);
 }
