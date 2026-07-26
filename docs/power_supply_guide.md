@@ -1,4 +1,4 @@
-# Power Supply Guide: Mean Well LRS Series
+# Power Supply Guide: Mean Well LRS Series & Safety
 
 If you look up industrial-grade power supplies for LED projects, you will find the **Mean Well LRS Series** (e.g. `LRS-50-5` or `LRS-100-5`). 
 
@@ -31,18 +31,42 @@ You will need a standard **3-prong AC power cord** (often sold as a "pigtail cor
    - **Green (or Green/Yellow):** Earth Ground (⏚)
 2. Slide the bare wires under the screws of the **L**, **N**, and **⏚** terminals on the power supply, and tighten the screws firmly.
 
-> [!CAUTION]
-> **AC Mains Safety:** Double-check that your AC power cord is **unplugged** from the wall while wiring. Make sure no stray wire strands touch adjacent terminals. Once wired, snap the clear plastic protective cover shut over the terminals.
+---
 
-### Step 2: DC Output (LED & ESP32 Connection)
-HUB75 LED panels ship with a red/black power cable that has a white **VH4 plug** on one end (plugs into the panel) and **fork spade terminals** on the other end.
-1. Connect the **Red Spade Terminal** to the **`+V`** terminal screw.
-2. Connect the **Black Spade Terminal** to the **`-V`** (sometimes labeled `COM` or `GND`) terminal screw.
-3. Plug the VH4 connector into the power header on the back of the LED panel.
+## 3. Crucial Safety: Eliminating Exposed AC Live Contacts
+
+Wiring AC mains voltage (110V/220V) can be intimidating, and leaving the screw terminals exposed is highly dangerous. To ensure **zero exposed live power**, use one of the following methods:
+
+### Method A: Use a 3D-Printed or Injection-Molded Terminal Cover (Highly Recommended)
+The LRS power supply has screw holes near the terminals designed specifically to attach a protective housing.
+1. **Print or Buy a Cover:** Search for `Mean Well LRS-50 terminal cover` (or `LRS-100` depending on your model) on Thingiverse, Printables, or Amazon. These are custom-designed plastic caps that snap or screw onto the end of the metal PSU.
+2. **How it works:** The AC power cord enters through a tight rubber grommet (strain relief) into the plastic cap, connects to the screws inside, and the cap is screwed shut. The terminals are completely sealed, leaving no metal contacts exposed to human touch.
+
+### Method B: Build a Fused AC Rocker Switch Inlet (Professional Setup)
+Instead of wiring a power cord directly to the terminals:
+1. Buy an **IEC320 C14 Fused Power Socket with Rocker Switch** (approx \$3 on Amazon). This is the standard 3-prong power plug socket found on the back of desktop computers.
+2. Wire the terminals of the LRS supply to the back of this socket, and enclose the entire assembly inside a 3D-printed terminal box.
+3. **How it works:** All raw AC wiring is sealed inside the box. On the outside, you simply flip a rocker switch and plug in a standard, safe computer power cable. If there is a short, the built-in fuse blows instantly, protecting your home.
 
 ---
 
-## 3. Power Requirements: HUB75 Multiplexing vs. LED Strips
+## 4. The "Zero AC Wiring" Alternative: Closed Desktop Power Bricks
+
+If you do not want to wire AC mains voltage under any circumstances, you can completely bypass it! 
+
+You can buy a **sealed consumer desktop power adapter brick** (similar to a laptop power brick) that outputs 5V DC directly.
+
+### What to Buy:
+- **5V 10A Closed Power Brick:** Search for `5V 10A AC adapter brick` (brands like ALITOVE or BTF-LIGHTING).
+- This block plugs directly into the wall, is completely sealed in plastic, and outputs safe 5V DC power via a standard **5.5mm x 2.1mm DC barrel jack**.
+
+### How to Connect it to the Flag:
+1. **If using a Driver Board/Shield (e.g., Adafruit Matrix Portal):** Many of these shields already have a DC barrel jack socket or a high-current USB-C port built-in. You simply plug the power brick directly into the shield.
+2. **If wiring directly:** Buy a **DC Female Barrel Jack to Screw Terminal Adapter** (often comes free with the power brick). You plug the brick into the jack, and run your red/black panel cables straight out of the screw terminals.
+
+---
+
+## 5. Power Requirements: HUB75 Multiplexing vs. LED Strips
 
 You might expect that an $128 \times 64$ LED flag (8,192 pixels) would require a massive, dangerous power supply. However, **HUB75 panels use scan-rate multiplexing**, which dramatically reduces power draw:
 
@@ -52,5 +76,5 @@ You might expect that an $128 \times 64$ LED flag (8,192 pixels) would require a
   - A $128 \times 64$ matrix (two $64 \times 64$ panels) draws at most **$8\text{A} - 10\text{A}$** at 5V.
 
 ### Model Recommendation:
-- **For $64 \times 32$ Panel:** Buy the **Mean Well LRS-50-5** (5V 10A / 50W). It is small, fanless, and has plenty of headroom.
-- **For $128 \times 64$ Panel:** Buy the **Mean Well LRS-100-5** (5V 20A / 100W). It is also fanless and provides abundant power for both panels and the ESP32.
+- **For $64 \times 32$ Panel:** Buy the **Mean Well LRS-50-5** (5V 10A / 50W) or a **5V 6A / 10A closed power brick**.
+- **For $128 \times 64$ Panel:** Buy the **Mean Well LRS-100-5** (5V 20A / 100W) or a **5V 10A / 12A closed power brick**.
