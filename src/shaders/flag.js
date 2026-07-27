@@ -186,7 +186,8 @@ void main() {
         float rainbowIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
         starIntensity = mix(staticIntensity, rainbowIntensity, uRainbowMode);
 
-        vec3 rainbowStarColor = hsv2rgb(vec3(fract(uTime * 0.25 + starPhase * 0.15), 0.85, 1.0));
+        // Stars act as transparent windows showing the scrolling rainbow stripes behind them
+        vec3 rainbowStarColor = hsv2rgb(vec3(fract(sampleUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
         activeStarColor = mix(uStarColor, rainbowStarColor, uRainbowMode);
 
         // Star glow halo effect outside the boundary (multiplied by borderFade)
