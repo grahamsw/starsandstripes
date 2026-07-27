@@ -185,7 +185,7 @@ void main() {
       float angle = float(i) * (2.0 * 3.14159265359 / 13.0) - 3.14159265359 / 2.0;
       
       // Snapping circular star centers to LED pixels in unscaled canton space
-      vec2 starCenterUnscaled = vec2(cos(angle) / 1.4111, sin(angle)) * 0.28 + vec2(0.5);
+      vec2 starCenterUnscaled = vec2(cos(angle) / 1.4111, sin(angle)) * 0.33 + vec2(0.5);
       vec2 starCenterPixels = (floor(starCenterUnscaled * vec2(cantonW, cantonH)) + vec2(0.5)) / vec2(cantonW, cantonH);
       vec2 snappedStarCenterUnscaled = mix(starCenterUnscaled, starCenterPixels, uLedEmulation);
       
