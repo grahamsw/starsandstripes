@@ -167,50 +167,50 @@ export const THEMES = {
   thinBlueLine: {
     name: 'Thin Blue Line 👮',
     stripeColors: [
-      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
-      '#002DFF', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
+      '#002DFF', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
-    cantonColor: '#0F0F0F',
+    cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
     rainbowMode: false
   },
   thinRedLine: {
     name: 'Thin Red Line 🧑‍🚒',
     stripeColors: [
-      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
-      '#E50000', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
+      '#E50000', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
-    cantonColor: '#0F0F0F',
+    cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
     rainbowMode: false
   },
   thinRedBlueLine: {
     name: 'First Responders 🚑',
     stripeColors: [
-      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#E50000',
-      '#002DFF', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#E50000',
+      '#002DFF', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
-    cantonColor: '#0F0F0F',
+    cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
     rainbowMode: false
   },
   thinGreenLine: {
     name: 'Thin Green Line 🪖',
     stripeColors: [
-      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
-      '#00A300', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
+      '#00A300', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
-    cantonColor: '#0F0F0F',
+    cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
     rainbowMode: false
   },
   thinGoldLine: {
     name: 'Thin Gold Line ☎️',
     stripeColors: [
-      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
-      '#FFD700', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
+      '#FFD700', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
-    cantonColor: '#0F0F0F',
+    cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
     rainbowMode: false
   }
