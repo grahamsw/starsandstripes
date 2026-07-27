@@ -74,6 +74,11 @@ const props = defineProps({
   ledHeight: {
     type: Number,
     default: 32
+  },
+  // Star Layout Mode: 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
+  starLayout: {
+    type: Number,
+    default: 0
   }
 });
 
@@ -102,6 +107,9 @@ let currentRainbowMode = props.rainbowMode ? 1.0 : 0.0;
 
 // Current LED emulation blend (0 = smooth, 1 = LED matrix)
 let currentLedEmulation = props.ledEmulation ? 1.0 : 0.0;
+
+// Current Star Layout blend (0 = 50-star grid, 1 = 13-star circle)
+let currentStarLayout = props.starLayout ? 1.0 : 0.0;
 
 // Watchers to update target colors when props change
 watch(() => props.stripeColors, (newVal) => {
@@ -220,7 +228,8 @@ const initThree = () => {
       uRainbowMode: { value: props.rainbowMode ? 1.0 : 0.0 },
       uShininess: { value: props.shininess },
       uLedEmulation: { value: props.ledEmulation ? 1.0 : 0.0 },
-      uLedResolution: { value: new THREE.Vector2(props.ledWidth, props.ledHeight) }
+      uLedResolution: { value: new THREE.Vector2(props.ledWidth, props.ledHeight) },
+      uStarLayout: { value: props.starLayout ? 1.0 : 0.0 }
     },
     side: THREE.DoubleSide,
     transparent: false
@@ -272,9 +281,13 @@ const animate = () => {
 
     flagMaterial.uniforms.uStripeColors.value = currentStripeColors;
     flagMaterial.uniforms.uCantonColor.value = currentCantonColor;
+    const targetStarLayout = props.starLayout ? 1.0 : 0.0;
+    currentStarLayout += (targetStarLayout - currentStarLayout) * lerpFactor;
+
     flagMaterial.uniforms.uStarColor.value = currentStarColor;
     flagMaterial.uniforms.uRainbowMode.value = currentRainbowMode;
     flagMaterial.uniforms.uLedEmulation.value = currentLedEmulation;
+    flagMaterial.uniforms.uStarLayout.value = currentStarLayout;
   }
 
   // 4. Auto-rotation of the scene camera

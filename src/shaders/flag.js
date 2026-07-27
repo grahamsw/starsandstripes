@@ -63,6 +63,7 @@ uniform float uLedEmulation;
 uniform vec2 uLedResolution;
 uniform vec2 uFrequency;
 uniform float uSpeed;
+uniform float uStarLayout;
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -125,22 +126,17 @@ void main() {
     // Interpolate canton coordinate space based on LED emulation mode
     vec2 activeCUv = mix(cUv, cUv_led, uLedEmulation);
     
-    // Grid coordinate calculations for the 50 stars
+    // 1. Calculate 50-Star Grid Mask & Glow
+    float starMask50 = 0.0;
+    float glow50 = 0.0;
+    float shadow50 = 0.0;
+    float starPhase50 = 0.0;
+    
     float rowF = activeCUv.y * 10.0;
     float colF = activeCUv.x * 12.0;
-    
     float r = floor(rowF + 0.5);
     float c = floor(colF + 0.5);
     
-    float starMask = 0.0;
-    float glow = 0.0;
-    float starIntensity = 1.0;
-    vec3 activeStarColor = uStarColor;
-    // Blend continuously between the static canton color and the shifting rainbow background
-    vec3 rainbowCantonBg = hsv2rgb(vec3(fract(uTime * 0.08), 0.9, 0.22));
-    vec3 activeCantonBg = mix(uCantonColor, rainbowCantonBg, uRainbowMode);
-
-    // Check if the nearest grid node is a valid star center
     if (r >= 1.0 && r <= 9.0 && c >= 1.0 && c <= 11.0) {
       bool isValidStar = false;
       if (mod(r, 2.0) == 1.0 && mod(c, 2.0) == 1.0) {
@@ -151,53 +147,87 @@ void main() {
       
       if (isValidStar) {
         vec2 starCenter = vec2(c / 12.0, r / 10.0);
-        
-        // Snap the star center (in canton coordinates) to the nearest LED pixel center in canton pixels
         vec2 starCenterPixels = (floor(starCenter * vec2(cantonW, cantonH)) + vec2(0.5)) / vec2(cantonW, cantonH);
         vec2 snappedStarCenter = mix(starCenter, starCenterPixels, uLedEmulation);
-        
         vec2 localUv = activeCUv - snappedStarCenter;
         
-        // Compute boundary fade using unscaled localUv to prevent square grid seams in the glow
-        // Spacing is 0.0416 (half-width) and 0.05 (half-height) in canton coordinates
         float borderFadeX = smoothstep(0.0416, 0.033, abs(localUv.x));
         float borderFadeY = smoothstep(0.0500, 0.040, abs(localUv.y));
         float borderFade = borderFadeX * borderFadeY;
         
-        // Correct aspect ratio
         localUv.x *= 1.4111;
         
-        // Compute grid-aware anti-aliasing edge width based on pixel size
-        // At high resolutions (smooth mode), this defaults to a sharp 0.0025.
-        // At low resolutions (LED mode), it expands to cover a fraction of the pixel size,
-        // softening the edges of the LED star points.
         float pixelSize = 1.0 / cantonH;
         float edgeWidth = mix(0.0025, 0.45 * pixelSize, uLedEmulation);
-        
-        // Compute signed distance
         float d = sdStar5(localUv, 0.042, 0.381966);
-        starMask = smoothstep(edgeWidth, -edgeWidth, d);
         
-        // Star color & intensity calculation, blended continuously between the static
-        // theme's gentle sparkle and rainbow mode's pulsating per-star color cycle
-        float starPhase = r * 0.6 + c * 0.4;
-
-        float staticIntensity = 0.8 + 0.2 * sin(uTime * 2.0 + starPhase);
-        float rainbowIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
-        starIntensity = mix(staticIntensity, rainbowIntensity, uRainbowMode);
-
-        // Stars act as transparent windows showing the scrolling rainbow stripes behind them
-        vec3 rainbowStarColor = hsv2rgb(vec3(fract(sampleUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
-        activeStarColor = mix(uStarColor, rainbowStarColor, uRainbowMode);
-
-        // Star glow halo effect outside the boundary (multiplied by borderFade)
-        glow = exp(-40.0 * max(d, 0.0)) * 0.32 * borderFade;
-        
-        // Drop shadow outline to create a "sewn-on" 3D fabric look
-        float shadow = smoothstep(0.008, 0.0, d) * 0.32;
-        activeCantonBg = activeCantonBg * (1.0 - shadow * (1.0 - starMask));
+        starMask50 = smoothstep(edgeWidth, -edgeWidth, d);
+        glow50 = exp(-40.0 * max(d, 0.0)) * 0.32 * borderFade;
+        shadow50 = smoothstep(0.008, 0.0, d) * 0.32;
+        starPhase50 = r * 0.6 + c * 0.4;
       }
     }
+    
+    // 2. Calculate 13-Star Circle (Betsy Ross) Mask & Glow
+    float starMask13 = 0.0;
+    float glow13 = 0.0;
+    float shadow13 = 0.0;
+    float starPhase13 = 0.0;
+    
+    vec2 uvCentered = activeCUv - vec2(0.5);
+    uvCentered.x *= 1.4111;
+    
+    float minDist = 1e6;
+    vec2 closestStarCenter = vec2(0.0);
+    float closestIdx = 0.0;
+    
+    for (int i = 0; i < 13; i++) {
+      float angle = float(i) * (2.0 * 3.14159265359 / 13.0) - 3.14159265359 / 2.0;
+      
+      // Snapping circular star centers to LED pixels in unscaled canton space
+      vec2 starCenterUnscaled = vec2(cos(angle) / 1.4111, sin(angle)) * 0.28 + vec2(0.5);
+      vec2 starCenterPixels = (floor(starCenterUnscaled * vec2(cantonW, cantonH)) + vec2(0.5)) / vec2(cantonW, cantonH);
+      vec2 snappedStarCenterUnscaled = mix(starCenterUnscaled, starCenterPixels, uLedEmulation);
+      
+      vec2 starCenterLoc = (snappedStarCenterUnscaled - vec2(0.5));
+      starCenterLoc.x *= 1.4111;
+      
+      float distVal = length(uvCentered - starCenterLoc);
+      if (distVal < minDist) {
+        minDist = distVal;
+        closestStarCenter = starCenterLoc;
+        closestIdx = float(i);
+      }
+    }
+    
+    vec2 localUv13 = uvCentered - closestStarCenter;
+    float d13 = sdStar5(localUv13, 0.042, 0.381966);
+    
+    float pixelSize13 = 1.0 / cantonH;
+    float edgeWidth13 = mix(0.0025, 0.45 * pixelSize13, uLedEmulation);
+    
+    starMask13 = smoothstep(edgeWidth13, -edgeWidth13, d13);
+    glow13 = exp(-40.0 * max(d13, 0.0)) * 0.32;
+    shadow13 = smoothstep(0.008, 0.0, d13) * 0.32;
+    starPhase13 = closestIdx * 0.5;
+    
+    // 3. Interpolate Layout parameters based on uStarLayout
+    float starMask = mix(starMask50, starMask13, uStarLayout);
+    float glow = mix(glow50, glow13, uStarLayout);
+    float shadow = mix(shadow50, shadow13, uStarLayout);
+    float starPhase = mix(starPhase50, starPhase13, uStarLayout);
+    
+    // Star color & intensity calculation
+    float staticIntensity = 0.8 + 0.2 * sin(uTime * 2.0 + starPhase);
+    float rainbowIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
+    float starIntensity = mix(staticIntensity, rainbowIntensity, uRainbowMode);
+    
+    vec3 rainbowStarColor = hsv2rgb(vec3(fract(sampleUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
+    vec3 activeStarColor = mix(uStarColor, rainbowStarColor, uRainbowMode);
+    
+    vec3 rainbowCantonBg = hsv2rgb(vec3(fract(uTime * 0.08), 0.9, 0.22));
+    vec3 activeCantonBg = mix(uCantonColor, rainbowCantonBg, uRainbowMode);
+    activeCantonBg = activeCantonBg * (1.0 - shadow * (1.0 - starMask));
     
     // Blend star mask with canton background and add outer glow halo
     cantonColor = mix(activeCantonBg, activeStarColor * starIntensity, starMask) + 
