@@ -163,5 +163,55 @@ export const THEMES = {
     cantonColor: '#2c3e50',
     starColor: '#e6dfd1',
     rainbowMode: false
+  },
+  thinBlueLine: {
+    name: 'Thin Blue Line 👮',
+    stripeColors: [
+      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
+      '#002DFF', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+    ],
+    cantonColor: '#0F0F0F',
+    starColor: '#E2E8F0',
+    rainbowMode: false
+  },
+  thinRedLine: {
+    name: 'Thin Red Line 🧑‍🚒',
+    stripeColors: [
+      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
+      '#E50000', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+    ],
+    cantonColor: '#0F0F0F',
+    starColor: '#E2E8F0',
+    rainbowMode: false
+  },
+  thinRedBlueLine: {
+    name: 'First Responders 🚑',
+    stripeColors: [
+      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#E50000',
+      '#002DFF', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+    ],
+    cantonColor: '#0F0F0F',
+    starColor: '#E2E8F0',
+    rainbowMode: false
+  },
+  thinGreenLine: {
+    name: 'Thin Green Line 🪖',
+    stripeColors: [
+      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
+      '#00A300', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+    ],
+    cantonColor: '#0F0F0F',
+    starColor: '#E2E8F0',
+    rainbowMode: false
+  },
+  thinGoldLine: {
+    name: 'Thin Gold Line ☎️',
+    stripeColors: [
+      '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A',
+      '#FFD700', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F', '#2A2A2A', '#0F0F0F'
+    ],
+    cantonColor: '#0F0F0F',
+    starColor: '#E2E8F0',
+    rainbowMode: false
   }
 };
