@@ -167,8 +167,8 @@ export const THEMES = {
   thinBlueLine: {
     name: 'Thin Blue Line 👮',
     stripeColors: [
-      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
-      '#002DFF', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#002DFF',
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
     cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
@@ -177,8 +177,8 @@ export const THEMES = {
   thinRedLine: {
     name: 'Thin Red Line 🧑‍🚒',
     stripeColors: [
-      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
-      '#E50000', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#E50000',
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
     cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
@@ -187,8 +187,8 @@ export const THEMES = {
   thinRedBlueLine: {
     name: 'First Responders 🚑',
     stripeColors: [
-      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#E50000',
-      '#002DFF', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#E50000', '#1A1A1A', '#002DFF',
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
     cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
@@ -197,8 +197,8 @@ export const THEMES = {
   thinGreenLine: {
     name: 'Thin Green Line 🪖',
     stripeColors: [
-      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
-      '#00A300', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#00A300',
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
     cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
@@ -207,8 +207,8 @@ export const THEMES = {
   thinGoldLine: {
     name: 'Thin Gold Line ☎️',
     stripeColors: [
-      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8',
-      '#FFD700', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#FFD700',
+      '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A', '#D8D8D8', '#1A1A1A'
     ],
     cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
