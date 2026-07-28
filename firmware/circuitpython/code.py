@@ -1,4 +1,4 @@
-# Physical LED Matrix Flag - CircuitPython Edition
+# Physical LED Matrix Flag - Auto-Cycling & Smooth Fading Edition
 # Target Board: Adafruit Matrix Portal M4 (SAMD51)
 # Display: 64x32 RGB HUB75 LED Panel (1/16 Scan)
 # 
@@ -18,7 +18,7 @@ displayio.release_displays()
 matrix = rgbmatrix.RGBMatrix(
     width=64,
     height=32,
-    bit_depth=3,  # Capped at 3 bits for high FPS in Python interpreter
+    bit_depth=4,  # Expanded to 4 bits (16 colors per stripe) for smoother gradients
     rgb_pins=[
         board.MTX_R1, board.MTX_G1, board.MTX_B1,
         board.MTX_R2, board.MTX_G2, board.MTX_B2
@@ -36,67 +36,98 @@ matrix = rgbmatrix.RGBMatrix(
 display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
 
 # Create 64x32 bitmap for draw operations
-bitmap = displayio.Bitmap(64, 32, 256) # 256 colors maximum index
+bitmap = displayio.Bitmap(64, 32, 256)
 
-# Build a palette of colors
-# Indices: 
-# 0..63: Red gradient (for waves)
-# 64..127: White/Grey gradient
-# 128..191: Blue/Canton gradient
-# 192..255: Custom Accent / Star gradient
+# Build a palette of 256 colors segmented into 15 logical groups (16 slots per group):
+# Slots 0..207 (13 stripes * 16 = 208 slots): 13 stripes
+# Slots 208..223 (16 slots): Canton Background
+# Slots 224..239 (16 slots): Stars
 palette = displayio.Palette(256)
 
-def update_palette(t, theme):
-    # Base colors (R, G, B) for the theme
-    if theme == "thin_blue":
-        color_a = (15, 15, 15)      # Black
-        color_b = (210, 210, 210)   # Silver
-        color_canton = (15, 15, 15)
-        color_star = (240, 240, 240)
-    elif theme == "thin_red":
-        color_a = (15, 15, 15)
-        color_b = (210, 210, 210)
-        color_canton = (15, 15, 15)
-        color_star = (240, 240, 240)
+# Configurable Parameters
+THEMES = ["classic", "thin_blue", "thin_red", "first_responders", "thin_green", "thin_gold"]
+CYCLE_INTERVAL = 10.0      # Cycle to next flag every 10 seconds
+TRANSITION_SPEED = 0.08    # Interpolation rate per frame (0.08 = ~1.2s crossfade)
+star_layout = 0            # 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
+
+def get_theme_colors(theme_name):
+    """Returns 13 stripe colors (list of RGB tuples), canton color, and star color."""
+    stripes = [(0, 0, 0)] * 13
+    
+    if theme_name == "classic":
+        red = (178, 34, 52)
+        white = (255, 255, 255)
+        for i in range(13):
+            stripes[i] = red if (i % 2 == 0) else white
+        canton = (40, 39, 90)
+        star = (255, 255, 255)
     else:
-        color_a = (180, 25, 45)      # Classic Red
-        color_b = (255, 255, 255)    # Classic White
-        color_canton = (50, 50, 110) # Classic Blue
-        color_star = (255, 255, 255)
+        # Thin Line themes share the same base (alternating Black / Silver-grey)
+        black = (18, 18, 18)
+        grey = (210, 210, 210)
+        for i in range(13):
+            stripes[i] = black if (i % 2 == 0) else grey
+            
+        canton = (12, 12, 12)
+        star = (240, 240, 240)
         
-    # Generate 64-step brightness gradients for wave shading
-    for i in range(64):
-        shading = 0.70 + 0.30 * (i / 63.0)
+        # Apply specific colored thin lines on the white stripe slots (Stripe 8 is index 7, Stripe 10 is index 9)
+        if theme_name == "thin_blue":
+            stripes[7] = (0, 45, 255)       # Thin Blue Line
+        elif theme_name == "thin_red":
+            stripes[7] = (229, 0, 0)        # Thin Red Line
+        elif theme_name == "first_responders":
+            stripes[7] = (0, 45, 255)       # Police Blue
+            stripes[9] = (229, 0, 0)        # Firefighter Red
+        elif theme_name == "thin_green":
+            stripes[7] = (0, 163, 0)        # Military/Federal Green
+        elif theme_name == "thin_gold":
+            stripes[7] = (255, 215, 0)      # Dispatcher Gold
+            
+    return stripes, canton, star
+
+# Initialize active color buffers (as float lists for smooth interpolation)
+current_theme_idx = 0
+active_theme = THEMES[current_theme_idx]
+target_stripes, target_canton, target_star = get_theme_colors(active_theme)
+
+current_stripes = [[float(c) for c in s] for s in target_stripes]
+current_canton = [float(c) for c in target_canton]
+current_star = [float(c) for c in target_star]
+
+def update_hardware_palette():
+    """Generates 16-step shading gradients for each region in the hardware palette."""
+    # 1. Update 13 Stripes
+    for i in range(13):
+        color = current_stripes[i]
+        for s in range(16):
+            shading = 0.70 + 0.30 * (s / 15.0) # 16 levels of shading
+            palette[i * 16 + s] = (
+                int(color[0] * shading),
+                int(color[1] * shading),
+                int(color[2] * shading)
+            )
+            
+    # 2. Update Canton (Slots 208..223)
+    for s in range(16):
+        shading = 0.70 + 0.30 * (s / 15.0)
+        palette[208 + s] = (
+            int(current_canton[0] * shading),
+            int(current_canton[1] * shading),
+            int(current_canton[2] * shading)
+        )
         
-        # Stripe A gradient (0-63)
-        palette[i] = (
-            int(color_a[0] * shading),
-            int(color_a[1] * shading),
-            int(color_a[2] * shading)
-        )
-        # Stripe B gradient (64-127)
-        palette[64 + i] = (
-            int(color_b[0] * shading),
-            int(color_b[1] * shading),
-            int(color_b[2] * shading)
-        )
-        # Canton background gradient (128-191)
-        palette[128 + i] = (
-            int(color_canton[0] * shading),
-            int(color_canton[1] * shading),
-            int(color_canton[2] * shading)
-        )
-        # Stars gradient (192-255)
-        palette[192 + i] = (
-            int(color_star[0] * shading),
-            int(color_star[1] * shading),
-            int(color_star[2] * shading)
+    # 3. Update Stars (Slots 224..239)
+    for s in range(16):
+        shading = 0.70 + 0.30 * (s / 15.0)
+        palette[224 + s] = (
+            int(current_star[0] * shading),
+            int(current_star[1] * shading),
+            int(current_star[2] * shading)
         )
 
-# Initialize palette
-theme = "classic" # Options: "classic", "thin_blue", "thin_red"
-star_layout = 0   # 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
-update_palette(0.0, theme)
+# Populate initial colors
+update_hardware_palette()
 
 # Create a TileGrid and Group to show it on screen
 tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
@@ -122,44 +153,53 @@ for i in range(13):
     stars_13.append((star_x, star_y))
 
 start_time = time.monotonic()
+last_cycle_time = start_time
 
-print("Flag Matrix Running. Edit theme or star_layout in code.py to customize!")
+print("Animated Flag Matrix Running. Auto-cycling active!")
 
 while True:
-    t = time.monotonic() - start_time
+    now = time.monotonic()
+    t = now - start_time
     
-    # Calculate wave shading indices for every cell (0 to 63)
-    # We do a fast approximation of the diagonal sine wave shading
+    # 1. Check if it's time to cycle to the next flag theme
+    if now - last_cycle_time > CYCLE_INTERVAL:
+        last_cycle_time = now
+        current_theme_idx = (current_theme_idx + 1) % len(THEMES)
+        active_theme = THEMES[current_theme_idx]
+        target_stripes, target_canton, target_star = get_theme_colors(active_theme)
+        print("Cycling to theme: " + active_theme)
+        
+    # 2. Smoothly interpolate current colors towards the target theme
+    for i in range(13):
+        for c in range(3):
+            current_stripes[i][c] += (target_stripes[i][c] - current_stripes[i][c]) * TRANSITION_SPEED
+    for c in range(3):
+        current_canton[c] += (target_canton[c] - current_canton[c]) * TRANSITION_SPEED
+        current_star[c] += (target_star[c] - current_star[c]) * TRANSITION_SPEED
+        
+    # 3. Update the hardware palette colors
+    update_hardware_palette()
+    
+    # 4. Render the pixels with moving diagonal wave shading
     for y in range(32):
         v = y / 31.0
-        
-        # Canton height boundary
         in_canton_y = (y < 17)
         stripe_idx = (y * 13) // 32
         
-        # Decide base palette color offsets
-        # Red/StripeA = 0, White/StripeB = 64, Canton = 128, Star = 192
-        if theme == "thin_blue" and stripe_idx == 7:
-            # Special Blue stripe
-            stripe_color_offset = 128 # Map to canton blue slots
-        elif theme == "thin_red" and stripe_idx == 7:
-            stripe_color_offset = 0 # Map to red slots
-        else:
-            stripe_color_offset = 0 if (stripe_idx % 2 == 0) else 64
-            
+        # Base index for stripes: each stripe occupies 16 slots
+        stripe_base_offset = stripe_idx * 16
+        
         for x in range(64):
             u = x / 63.0
             
-            # Diagonal wave phase calculation
+            # Shading phase math (rolling diagonal bands)
             phase = u * 4.5 + (1.0 - v) * 2.5 - t * 2.2
             shading_val = 0.76 + 0.24 * math.sin(phase)
-            shading_idx = int(shading_val * 63) # Normalize to 0-63 range
-            shading_idx = max(0, min(63, shading_idx))
+            shading_idx = int(shading_val * 15) # Scale to 0-15 shading range
+            shading_idx = max(0, min(15, shading_idx))
             
-            # 1. Determine base region (Canton vs Stripes)
+            # Draw Canton vs Stripes
             if x < 26 and in_canton_y:
-                # Canton area
-                # Check if pixel is part of a star
                 is_star = False
                 if star_layout == 0:
                     for s_x, s_y in stars_50:
@@ -177,13 +217,12 @@ while True:
                             break
                             
                 if is_star:
-                    bitmap[x, y] = 192 + shading_idx # Stars
+                    bitmap[x, y] = 224 + shading_idx # Stars (offset 224)
                 else:
-                    bitmap[x, y] = 128 + shading_idx # Canton background
+                    bitmap[x, y] = 208 + shading_idx # Canton (offset 208)
             else:
-                # Stripes area
-                bitmap[x, y] = stripe_color_offset + shading_idx
+                bitmap[x, y] = stripe_base_offset + shading_idx
 
-    # Refresh the display matrix
+    # Draw to the screen
     display.refresh()
-    time.sleep(0.016) # Cap around 60 FPS
+    time.sleep(0.01) # Small delay for frame spacing
