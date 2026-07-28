@@ -1,0 +1,20 @@
+name: "Feature Request (Agent Task)"
+description: "Define a task or feature for an agent to work on"
+title: "[Feature]: "
+labels: ["agent-task", "needs-pr"]
+body:
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements & Acceptance Criteria
+      description: Clear, specific, unambiguous goals.
+      placeholder: "1. Add a /health Endpoint. 2. Must return HTTP 200 JSON {'status': 'ok'}."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Technical Constraints
+      description: Specific files to modify, libraries to use, or patterns to follow.
+      placeholder: "Use FastAPI. Keep changes contained inside src/api/health.py."
