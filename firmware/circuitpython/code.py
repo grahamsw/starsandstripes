@@ -28,7 +28,7 @@ matrix = rgbmatrix.RGBMatrix(
         board.MTX_ADDRC, board.MTX_ADDRD
     ],
     clock_pin=board.MTX_CLK,
-    latch_pin=board.MTX_LATCH,
+    latch_pin=board.MTX_LAT,
     output_enable_pin=board.MTX_OE
 )
 
