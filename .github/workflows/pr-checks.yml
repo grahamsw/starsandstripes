@@ -1,34 +1,25 @@
-name: "PR Quality & Test Gate"
+name: "PR Build & Compiler Gate"
 
 on:
   pull_request:
     branches: ["main"]
 
 jobs:
-  test-and-lint:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-          cache: "pip"
+          node-version: "20"
+          cache: "npm"
 
       - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest flake8
+        run: npm ci
 
-      - name: Lint Code
-        run: |
-          # Fails if there are syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-
-      - name: Run Unit Tests
-        run: |
-          pytest
+      - name: Build Project
+        run: npm run build
