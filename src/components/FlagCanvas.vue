@@ -79,6 +79,11 @@ const props = defineProps({
   starLayout: {
     type: Number,
     default: 0
+  },
+  // Vertical Hanging Mode
+  verticalMode: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -90,6 +95,7 @@ let scene = null;
 let camera = null;
 let controls = null;
 let flagMaterial = null;
+let flagMesh = null;
 let animationFrameId = null;
 
 // Target colors as THREE.Color objects for interpolation
@@ -108,8 +114,21 @@ let currentRainbowMode = props.rainbowMode ? 1.0 : 0.0;
 // Current LED emulation blend (0 = smooth, 1 = LED matrix)
 let currentLedEmulation = props.ledEmulation ? 1.0 : 0.0;
 
+// Current Vertical Mode blend (0 = horizontal, 1 = vertical)
+let currentVerticalMode = props.verticalMode ? 1.0 : 0.0;
+
 // Current Star Layout blend (0 = 50-star grid, 1 = 13-star circle)
 let currentStarLayout = props.starLayout ? 1.0 : 0.0;
+
+// Watcher for vertical mode geometry changes
+watch(() => props.verticalMode, (newVal) => {
+  if (flagMesh) {
+    flagMesh.geometry.dispose();
+    flagMesh.geometry = newVal
+      ? new THREE.PlaneGeometry(1.0, 1.9, 80, 120)
+      : new THREE.PlaneGeometry(1.9, 1.0, 120, 80);
+  }
+});
 
 // Watchers to update target colors when props change
 watch(() => props.stripeColors, (newVal) => {
@@ -210,8 +229,10 @@ const initThree = () => {
   scene.add(pointLight);
 
   // 6. Waving Flag Plane
-  // Aspect ratio is 1.9 : 1.0. Large segment count for smooth wave curves
-  const flagGeom = new THREE.PlaneGeometry(1.9, 1.0, 120, 80);
+  // Aspect ratio is 1.9 : 1.0 (horizontal) or 1.0 : 1.9 (vertical).
+  const flagGeom = props.verticalMode
+    ? new THREE.PlaneGeometry(1.0, 1.9, 80, 120)
+    : new THREE.PlaneGeometry(1.9, 1.0, 120, 80);
 
   // Custom Shader Material using flag.js shaders
   flagMaterial = new THREE.ShaderMaterial({
@@ -229,13 +250,14 @@ const initThree = () => {
       uShininess: { value: props.shininess },
       uLedEmulation: { value: props.ledEmulation ? 1.0 : 0.0 },
       uLedResolution: { value: new THREE.Vector2(props.ledWidth, props.ledHeight) },
-      uStarLayout: { value: props.starLayout ? 1.0 : 0.0 }
+      uStarLayout: { value: props.starLayout ? 1.0 : 0.0 },
+      uVerticalMode: { value: props.verticalMode ? 1.0 : 0.0 }
     },
     side: THREE.DoubleSide,
     transparent: false
   });
 
-  const flagMesh = new THREE.Mesh(flagGeom, flagMaterial);
+  flagMesh = new THREE.Mesh(flagGeom, flagMaterial);
   flagMesh.position.set(0, 0, 0);
   scene.add(flagMesh);
 };
@@ -285,9 +307,13 @@ const animate = () => {
     currentStarLayout += (targetStarLayout - currentStarLayout) * lerpFactor;
 
     flagMaterial.uniforms.uStarColor.value = currentStarColor;
+    const targetVerticalMode = props.verticalMode ? 1.0 : 0.0;
+    currentVerticalMode += (targetVerticalMode - currentVerticalMode) * lerpFactor;
+
     flagMaterial.uniforms.uRainbowMode.value = currentRainbowMode;
     flagMaterial.uniforms.uLedEmulation.value = currentLedEmulation;
     flagMaterial.uniforms.uStarLayout.value = currentStarLayout;
+    flagMaterial.uniforms.uVerticalMode.value = currentVerticalMode;
   }
 
   // 4. Auto-rotation of the scene camera

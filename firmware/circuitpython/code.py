@@ -1,4 +1,4 @@
-# Physical LED Matrix Flag - Silky Smooth 60FPS Edition
+# Physical LED Matrix Flag - Auto-Cycling, Fading, and Accelerometer Auto-Rotation
 # Target Board: Adafruit Matrix Portal M4 (SAMD51)
 # Display: 64x32 RGB HUB75 LED Panel (1/16 Scan)
 # 
@@ -38,10 +38,7 @@ display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
 # Create 64x32 bitmap for draw operations
 bitmap = displayio.Bitmap(64, 32, 256)
 
-# Build a palette of 256 colors segmented into 15 logical groups (16 slots per group):
-# Slots 0..207 (13 stripes * 16 = 208 slots): 13 stripes
-# Slots 208..223 (16 slots): Canton Background
-# Slots 224..239 (16 slots): Stars
+# Build a palette of 256 colors segmented into 15 logical groups (16 slots per group)
 palette = displayio.Palette(256)
 
 # Configurable Parameters
@@ -64,6 +61,21 @@ THEMES = [
 CYCLE_INTERVAL = 10.0      # Cycle to next flag every 10 seconds
 TRANSITION_SPEED = 0.08    # Interpolation rate per frame (~1.2s crossfade)
 star_layout = 0            # 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
+vertical_mode = 0          # 0 = horizontal (landscape), 1 = vertical (portrait)
+
+# Initialize I2C Accelerometer for auto-rotation
+accelerometer = None
+try:
+    import adafruit_lis3dh
+    # The LIS3DH on the Matrix Portal M4 is wired to the internal I2C bus:
+    i2c = board.I2C()
+    # The I2C address of LIS3DH on Matrix Portal is 0x19
+    accelerometer = adafruit_lis3dh.LIS3DH_I2C(i2c, address=0x19)
+    accelerometer.range = adafruit_lis3dh.RANGE_2_G
+    print("LIS3DH Accelerometer initialized successfully! Auto-rotation active.")
+except Exception as e:
+    print("Accelerometer not initialized (missing library or hardware issue):", e)
+    print("Falling back to manual horizontal layout mode.")
 
 def hsv_to_rgb(h, s, v):
     """Utility to convert HSV values (0..1) to RGB (0..255)."""
@@ -110,7 +122,6 @@ def get_theme_colors(theme_name, t=0.0):
         yellow = (255, 255, 0)
         orange = (255, 165, 0)
         red = (255, 0, 0)
-        # Map 6 colors across 13 stripes
         stripes[0] = stripes[1] = violet
         stripes[2] = stripes[3] = blue
         stripes[4] = stripes[5] = green
@@ -130,7 +141,6 @@ def get_theme_colors(theme_name, t=0.0):
         orange = (255, 165, 0)
         red = (255, 0, 0)
         pink = (255, 105, 180)
-        # Map 8 colors
         stripes[0] = violet
         stripes[1] = indigo
         stripes[2] = stripes[3] = turquoise
@@ -243,7 +253,6 @@ current_star = [float(c) for c in target_star]
 
 def update_hardware_palette():
     """Builds a 16-step flat palette gradient using the active colors (shading level 15 is full brightness)."""
-    # 1. Update 13 Stripes
     for i in range(13):
         color = current_stripes[i]
         for s in range(16):
@@ -254,7 +263,6 @@ def update_hardware_palette():
                 int(color[2] * shading)
             )
             
-    # 2. Update Canton (Slots 208..223)
     for s in range(16):
         shading = 0.70 + 0.30 * (s / 15.0)
         palette[208 + s] = (
@@ -263,7 +271,6 @@ def update_hardware_palette():
             int(current_canton[2] * shading)
         )
         
-    # 3. Update Stars (Slots 224..239)
     for s in range(16):
         shading = 0.70 + 0.30 * (s / 15.0)
         palette[224 + s] = (
@@ -272,43 +279,72 @@ def update_hardware_palette():
             int(current_star[2] * shading)
         )
 
-# Pre-calculate star coordinate sets
-stars_50 = []
+# Pre-calculate star coordinate sets (Landscape layout)
+stars_50_horizontal = []
 for r in range(1, 10):
     for c in range(1, 12):
         if (r % 2 == 1 and c % 2 == 1) or (r % 2 == 0 and c % 2 == 0):
-            stars_50.append((int((c / 12.0) * 26.0), int((r / 10.0) * 17.0)))
+            stars_50_horizontal.append((int((c / 12.0) * 26.0), int((r / 10.0) * 17.0)))
 
-stars_13 = []
+stars_13_horizontal = []
 for i in range(13):
     angle = i * (2.0 * math.pi / 13.0) - math.pi / 2.0
     star_x = int((math.cos(angle) / 1.529) * 0.33 * 26.0 + 13.0)
     star_y = int(math.sin(angle) * 0.33 * 17.0 + 8.5)
-    stars_13.append((star_x, star_y))
+    stars_13_horizontal.append((star_x, star_y))
 
-stars_50_set = set(stars_50)
-stars_13_set = set(stars_13)
+# Pre-calculate star coordinate sets (Portrait layout - rotated 90 degrees)
+stars_50_vertical = []
+for r in range(1, 10):
+    for c in range(1, 12):
+        if (r % 2 == 1 and c % 2 == 1) or (r % 2 == 0 and c % 2 == 0):
+            star_y = int((c / 12.0) * 17.0)
+            star_x = int((r / 10.0) * 26.0) + 38
+            stars_50_vertical.append((star_x, star_y))
 
-def render_static_bitmap(layout_mode):
-    """Draws the flag shapes once on the bitmap. Shading index 15 means flat full-brightness."""
-    active_stars = stars_13_set if layout_mode == 1 else stars_50_set
-    
-    for y in range(32):
-        in_canton_y = (y < 17)
-        stripe_idx = (y * 13) // 32
-        stripe_base_offset = stripe_idx * 16
+stars_13_vertical = []
+for i in range(13):
+    angle = i * (2.0 * math.pi / 13.0) - math.pi / 2.0
+    star_y = int((math.cos(angle) * 0.6538) * 0.33 * 17.0 + 8.5)
+    star_x = int(math.sin(angle) * 0.33 * 26.0 + 13.0) + 38
+    stars_13_vertical.append((star_x, star_y))
+
+# Convert to sets for fast O(1) hash lookup
+stars_50_horizontal_set = set(stars_50_horizontal)
+stars_13_horizontal_set = set(stars_13_horizontal)
+stars_50_vertical_set = set(stars_50_vertical)
+stars_13_vertical_set = set(stars_13_vertical)
+
+def render_static_bitmap(layout_mode, vert_mode):
+    """Draws the flag shapes on the bitmap once. Shading index 15 means flat full-brightness."""
+    if vert_mode == 1:
+        active_stars = stars_13_vertical_set if layout_mode == 1 else stars_50_vertical_set
+    else:
+        active_stars = stars_13_horizontal_set if layout_mode == 1 else stars_50_horizontal_set
         
+    for y in range(32):
         for x in range(64):
-            if x < 26 and in_canton_y:
-                if (x, y) in active_stars:
-                    bitmap[x, y] = 224 + 15  # Star base + max shading
-                else:
-                    bitmap[x, y] = 208 + 15  # Canton base + max shading
+            if vert_mode == 1:
+                # Vertical hanging mode (Canton is at top-left: y < 17 and x >= 38)
+                in_canton = (y < 17 and x >= 38)
+                stripe_idx = (y * 13) // 32
             else:
-                bitmap[x, y] = stripe_base_offset + 15  # Stripe base + max shading
+                # Horizontal mode (Canton is at top-left: x < 26 and y < 17)
+                in_canton = (x < 26 and y < 17)
+                stripe_idx = (y * 13) // 32
+                
+            stripe_base_offset = stripe_idx * 16
+            
+            if in_canton:
+                if (x, y) in active_stars:
+                    bitmap[x, y] = 224 + 15
+                else:
+                    bitmap[x, y] = 208 + 15
+            else:
+                bitmap[x, y] = stripe_base_offset + 15
 
-# Perform initial render of the bitmap
-render_static_bitmap(star_layout)
+# Initial bitmap draw
+render_static_bitmap(star_layout, vertical_mode)
 update_hardware_palette()
 
 # Display configuration
@@ -320,29 +356,44 @@ display.root_group = group
 start_time = time.monotonic()
 last_cycle_time = start_time
 last_star_layout = star_layout
+last_vertical_mode = vertical_mode
 
-print("Animated Flag Matrix Running. Auto-cycling all themes at high-speed 60FPS!")
+print("Animated Flag Matrix Running with Accelerometer Auto-Rotation!")
 
 while True:
     now = time.monotonic()
     t = now - start_time
     
-    # 1. Star layout change handler (triggers a one-time bitmap redraw)
-    if star_layout != last_star_layout:
+    # 1. Read Accelerometer to determine layout orientation
+    if accelerometer:
+        try:
+            x_acc, y_acc, z_acc = accelerometer.acceleration
+            # If long axis (x) has stronger gravitational pull than short axis (y)
+            if abs(x_acc) > abs(y_acc) + 2.0:
+                vertical_mode = 1 # Portrait
+            elif abs(y_acc) > abs(x_acc) + 2.0:
+                vertical_mode = 0 # Landscape
+        except Exception as e:
+            pass
+            
+    # 2. Check if layout or orientation changes triggered a redraw
+    if (star_layout != last_star_layout) or (vertical_mode != last_vertical_mode):
         last_star_layout = star_layout
-        render_static_bitmap(star_layout)
+        last_vertical_mode = vertical_mode
+        print("Flipping display layout. Vertical Mode: " + str(vertical_mode))
+        render_static_bitmap(star_layout, vertical_mode)
         
-    # 2. Cycle theme timer
+    # 3. Cycle theme timer
     if now - last_cycle_time > CYCLE_INTERVAL:
         last_cycle_time = now
         current_theme_idx = (current_theme_idx + 1) % len(THEMES)
         active_theme = THEMES[current_theme_idx]
         print("Cycling to theme: " + active_theme)
         
-    # Retrieve target colors (rainbow_wave calculates targets dynamically based on time)
+    # Retrieve target colors
     target_stripes, target_canton, target_star = get_theme_colors(active_theme, t)
     
-    # 3. Lerp active colors towards target colors
+    # 4. Lerp active colors towards target colors
     for i in range(13):
         for c in range(3):
             current_stripes[i][c] += (target_stripes[i][c] - current_stripes[i][c]) * TRANSITION_SPEED
@@ -350,9 +401,9 @@ while True:
         current_canton[c] += (target_canton[c] - current_canton[c]) * TRANSITION_SPEED
         current_star[c] += (target_star[c] - current_star[c]) * TRANSITION_SPEED
         
-    # 4. Push updated colors to the hardware palette
+    # 5. Push colors to hardware palette
     update_hardware_palette()
     
-    # Refresh the display buffer
+    # Refresh display buffer
     display.refresh()
-    time.sleep(0.016)  # Stable 60 FPS loop pacing
+    time.sleep(0.016)

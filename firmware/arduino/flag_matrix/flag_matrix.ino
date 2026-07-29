@@ -7,9 +7,13 @@
  * Required Libraries (install via Arduino Library Manager):
  * - Adafruit Protomatter (High-speed HUB75 DMA engine)
  * - Adafruit GFX Library (Core graphics functions)
+ * - Adafruit LIS3DH (Accelerometer support)
+ * - Adafruit Unified Sensor (Core sensor interface)
  */
 
 #include <Adafruit_Protomatter.h>
+#include <Adafruit_LIS3DH.h>
+#include <Adafruit_Sensor.h>
 #include <math.h>
 
 // Matrix Portal M4 Pin Configuration for HUB75 Panels
@@ -33,59 +37,83 @@ Adafruit_Protomatter matrix(
   true            // Double-buffering enabled for tear-free animation
 );
 
+// Initialize LIS3DH accelerometer on I2C
+Adafruit_LIS3DH lis = Adafruit_LIS3DH();
+bool accelEnabled = false;
+bool verticalMode = false; // Toggled dynamically by accelerometer orientation
+
 // Theme Selection
 enum Theme {
   THEME_CLASSIC,
   THEME_THIN_BLUE_LINE,
   THEME_THIN_RED_LINE,
   THEME_FIRST_RESPONDERS,
+  THEME_THIN_GREEN_LINE,
+  THEME_THIN_GOLD_LINE,
   THEME_ALL_RESPONDERS,
+  THEME_RAINBOW,
   THEME_VAPORWAVE,
-  THEME_MONOCHROME,
-  THEME_RAINBOW
+  THEME_MONOCHROME
 };
 
-// Configurable Parameters
-Theme currentTheme = THEME_CLASSIC; 
-int starLayout = 0;                 // 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
-float animationSpeed = 2.2;         // Wind speed factor
-float waveFrequency = 4.5;          // Spatial frequency of rolling shadows
+// Global active configuration
+Theme currentTheme = THEME_CLASSIC;
+int starLayout = 0; // 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
 
-// Struct to store RGB colors
+// Wave motion variables
+float waveFrequency = 5.2;
+float animationSpeed = 3.6;
+float waveAmplitude = 0.15;
+
+// Simple RGB Color struct
 struct ColorRGB {
   uint8_t r;
   uint8_t g;
   uint8_t b;
 };
 
-// Retrieve colors based on stripe index and active theme
+// Forward declarations
+float fract(float val);
+ColorRGB hsvToRgb(float h, float s, float v);
+
+// Returns stripe color for the specified theme and time offset
 ColorRGB getStripeColor(int stripeIdx, float t) {
   if (currentTheme == THEME_RAINBOW) {
-    // Rainbow scrolling downward
-    float hue = fract((float)stripeIdx / 13.0 * 1.3 - t * 0.45);
+    float hue = fract((float)stripeIdx / 12.0 * 1.3 - t * 0.45);
     return hsvToRgb(hue, 1.0, 1.0);
   }
-
-  ColorRGB colorA, colorB;
   
+  ColorRGB colorA, colorB;
   switch (currentTheme) {
     case THEME_THIN_BLUE_LINE:
-      colorA = {26, 26, 26}; // Black
-      colorB = {216, 216, 216}; // Silver-grey
-      if (stripeIdx == 7) return {0, 45, 255}; // 4th White stripe is Blue (Stripe 8)
+      colorA = {18, 18, 18}; // Dark Charcoal
+      colorB = {210, 210, 210}; // Grey
+      if (stripeIdx == 7) return {0, 45, 255}; // Blue
       break;
       
     case THEME_THIN_RED_LINE:
-      colorA = {26, 26, 26};
-      colorB = {216, 216, 216};
-      if (stripeIdx == 7) return {229, 0, 0}; // 4th White stripe is Red
+      colorA = {18, 18, 18};
+      colorB = {210, 210, 210};
+      if (stripeIdx == 7) return {229, 0, 0}; // Red
       break;
       
     case THEME_FIRST_RESPONDERS:
-      colorA = {26, 26, 26};
-      colorB = {216, 216, 216};
-      if (stripeIdx == 7) return {0, 45, 255}; // 4th White stripe is Blue
-      if (stripeIdx == 9) return {229, 0, 0};  // 5th White stripe is Red
+      colorA = {18, 18, 18};
+      colorB = {210, 210, 210};
+      if (stripeIdx == 7) return {0, 45, 255}; // Blue
+      if (stripeIdx == 9) return {229, 0, 0};  // Red
+      break;
+
+    case THEME_THIN_GREEN_LINE:
+      colorA = {18, 18, 18};
+      colorB = {210, 210, 210};
+      if (stripeIdx == 7) return {0, 163, 0}; // Green
+      break;
+
+    case THEME_THIN_GOLD_LINE:
+      colorA = {18, 18, 18};
+      colorB = {210, 210, 210};
+      if (stripeIdx == 7) return {255, 215, 0}; // Gold
       break;
       
     case THEME_ALL_RESPONDERS:
@@ -117,7 +145,6 @@ ColorRGB getStripeColor(int stripeIdx, float t) {
   }
   
   // US flag stripes alternate: Red (even index counting from top 1..13) and White (odd index)
-  // Index 0 in our loop is Stripe 1 (top).
   return (stripeIdx % 2 == 0) ? colorA : colorB;
 }
 
@@ -126,7 +153,8 @@ ColorRGB getCantonBgColor(float t) {
     return hsvToRgb(fract(t * 0.08), 0.9, 0.22);
   }
   if (currentTheme == THEME_THIN_BLUE_LINE || currentTheme == THEME_THIN_RED_LINE || 
-      currentTheme == THEME_FIRST_RESPONDERS || currentTheme == THEME_ALL_RESPONDERS) {
+      currentTheme == THEME_FIRST_RESPONDERS || currentTheme == THEME_ALL_RESPONDERS ||
+      currentTheme == THEME_THIN_GREEN_LINE || currentTheme == THEME_THIN_GOLD_LINE) {
     return {26, 26, 26}; // Tactical Black canton
   }
   if (currentTheme == THEME_VAPORWAVE) {
@@ -157,15 +185,46 @@ void setup() {
   Serial.println((int)status);
   
   if (status != PROTOMATTER_OK) {
-    // Hang on error
     while (1) delay(10);
+  }
+
+  // Initialize LIS3DH Accelerometer
+  if (lis.begin(0x19)) {
+    lis.setRange(LIS3DH_RANGE_2_G);
+    accelEnabled = true;
+    Serial.println("LIS3DH Accelerometer started successfully.");
+  } else {
+    Serial.println("Could not start LIS3DH. Defaulting to landscape orientation.");
   }
 }
 
 void loop() {
   float t = millis() * 0.001; // Time in seconds
 
-  // Draw the flag pixel by pixel
+  // 1. Cycle themes every 10 seconds automatically
+  static unsigned long lastCycleTime = 0;
+  if (millis() - lastCycleTime > 10000) {
+    lastCycleTime = millis();
+    currentTheme = (Theme)((currentTheme + 1) % 10);
+    Serial.print("Cycled Theme: ");
+    Serial.println((int)currentTheme);
+  }
+
+  // 2. Read accelerometer to auto-rotate layout
+  if (accelEnabled) {
+    sensors_event_t event;
+    lis.getEvent(&event);
+    float x_acc = event.acceleration.x;
+    float y_acc = event.acceleration.y;
+    
+    if (abs(x_acc) > abs(y_acc) + 2.0) {
+      verticalMode = true; // Rotated to portrait orientation
+    } else if (abs(y_acc) > abs(x_acc) + 2.0) {
+      verticalMode = false; // Landscape orientation
+    }
+  }
+
+  // 3. Draw the flag pixel by pixel
   for (int y = 0; y < HEIGHT; y++) {
     for (int x = 0; x < WIDTH; x++) {
       
@@ -175,24 +234,41 @@ void loop() {
       
       // 1. Determine base color (Canton vs Stripes)
       ColorRGB baseColor;
+      bool inCanton = false;
+      float cUvX = 0.0;
+      float cUvY = 0.0;
+      int stripeIdx = 0;
       
-      // Canton region (top-left 26 columns, top 17 rows)
-      // GFX coordinates: (0,0) is top-left, y increases downward.
-      bool inCanton = (x < 26 && y < 17);
+      if (verticalMode) {
+        // Vertical Hanging layout: Canton is top-left (y < 17, x >= 38)
+        inCanton = (y < 17 && x >= 38);
+        if (inCanton) {
+          cUvX = (float)y / 17.0;
+          cUvY = (float)(x - 38) / 26.0;
+        } else {
+          // Stripes hang vertically, vary along the horizontal axis (y)
+          stripeIdx = (y * 13) / HEIGHT;
+        }
+      } else {
+        // Horizontal layout: Canton is top-left (x < 26, y < 17)
+        inCanton = (x < 26 && y < 17);
+        if (inCanton) {
+          cUvX = (float)x / 26.0;
+          cUvY = (float)y / 17.0;
+        } else {
+          // Stripes run horizontally, vary along the vertical axis (y)
+          stripeIdx = (y * 13) / HEIGHT;
+        }
+      }
       
       if (inCanton) {
         // Draw Canton background
         baseColor = getCantonBgColor(t);
         
-        // Canton UV coordinates normalized [0.0, 1.0]
-        float cUvX = (float)x / 26.0;
-        float cUvY = (float)y / 17.0;
-        
         bool isStarPixel = false;
         
         if (starLayout == 0) {
           // --- 50-Star Grid ---
-          // Center coordinate grids
           float colF = cUvX * 12.0;
           float rowF = cUvY * 10.0;
           
@@ -205,31 +281,35 @@ void loop() {
             else if (r % 2 == 0 && c % 2 == 0) isValid = true;
             
             if (isValid) {
-              // Center coordinates in pixel units
-              float starCenterX = ((float)c / 12.0) * 26.0;
-              float starCenterY = ((float)r / 10.0) * 17.0;
+              float starCenterX, starCenterY;
+              float dx, dy;
               
-              // Draw simple cross-shaped stars
-              float dx = abs((float)x - starCenterX);
-              float dy = abs((float)y - starCenterY);
+              if (verticalMode) {
+                starCenterX = ((float)c / 12.0) * 17.0;
+                starCenterY = ((float)r / 10.0) * 26.0 + 38.0;
+                dx = abs((float)y - starCenterX);
+                dy = abs((float)x - starCenterY);
+              } else {
+                starCenterX = ((float)c / 12.0) * 26.0;
+                starCenterY = ((float)r / 10.0) * 17.0;
+                dx = abs((float)x - starCenterX);
+                dy = abs((float)y - starCenterY);
+              }
               
               if (dx < 0.65 && dy < 0.65) {
                 isStarPixel = true;
               } else if ((dx < 1.1 && dy < 0.35) || (dy < 1.1 && dx < 0.35)) {
-                // Dimmer star tips (anti-aliasing)
                 isStarPixel = true; 
               }
             }
           }
         } else {
           // --- 13-Star Circle (Betsy Ross) ---
-          // Normalize centered space and correct aspect ratio
-          float uvCenteredX = (cUvX - 0.5) * (26.0 / 17.0);
+          float aspect = verticalMode ? (17.0 / 26.0) : (26.0 / 17.0);
+          float uvCenteredX = (cUvX - 0.5) * aspect;
           float uvCenteredY = cUvY - 0.5;
           
           float minDist = 999.0;
-          
-          // Check distance to all 13 stars in the circle
           for (int i = 0; i < 13; i++) {
             float angle = (float)i * (2.0 * M_PI / 13.0) - M_PI / 2.0;
             float starCenterX = cos(angle) * 0.33;
@@ -244,7 +324,6 @@ void loop() {
             }
           }
           
-          // Draw soft star dots
           if (minDist < 0.042) {
             isStarPixel = true;
           }
@@ -255,30 +334,31 @@ void loop() {
         }
         
       } else {
-        // Draw Stripes (13 horizontal stripes)
-        // GFX: y=0 is Stripe 1 (index 0), y=31 is Stripe 13 (index 12)
-        int stripeIdx = (y * 13) / HEIGHT;
         baseColor = getStripeColor(stripeIdx, t);
       }
       
       // 2. Apply Wave Illumination Overlay
-      // Rolling diagonal wave coordinates
-      float wavePhase = u * waveFrequency * 0.65 + (1.0 - v) * waveFrequency * 0.65 - t * animationSpeed;
+      float wavePhase;
+      if (verticalMode) {
+        // Downward waving phase propagation
+        wavePhase = u * waveFrequency * 0.65 + (1.0 - v) * waveFrequency * 0.65 - t * animationSpeed;
+      } else {
+        // Left-to-right waving phase propagation
+        wavePhase = u * waveFrequency * 0.65 + (1.0 - v) * waveFrequency * 0.65 - t * animationSpeed;
+      }
       float waveShading = 0.76 + 0.24 * sin(wavePhase);
       
       uint8_t finalR = (uint8_t)constrain(baseColor.r * waveShading, 0, 255);
       uint8_t finalG = (uint8_t)constrain(baseColor.g * waveShading, 0, 255);
       uint8_t finalB = (uint8_t)constrain(baseColor.b * waveShading, 0, 255);
       
-      // Draw to the off-screen buffer
+      // Draw to offscreen buffer
       matrix.drawPixel(x, y, matrix.color565(finalR, finalG, finalB));
     }
   }
 
-  // Swap buffers to display the new frame
+  // Swap buffers to display new frame
   matrix.show();
-  
-  // Maintain smooth frame rate
   delay(16); // ~60fps target
 }
 

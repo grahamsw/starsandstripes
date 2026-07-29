@@ -16,6 +16,7 @@
       :led-width="ledWidth"
       :led-height="ledHeight"
       :star-layout="starLayout"
+      :vertical-mode="verticalMode"
     />
 
     <!-- Floating Show Button (Visible only when panel is collapsed) -->
@@ -81,7 +82,7 @@
         <!-- Canton Star Layout Section -->
         <section class="section">
           <h2 class="section-title">Canton Stars</h2>
-          <div class="resolution-options">
+          <div class="resolution-options mb-3">
             <label class="radio-label">
               <input type="radio" :value="0" v-model="starLayout" />
               <span>50 Stars (Modern)</span>
@@ -91,6 +92,10 @@
               <span>13 Stars (Betsy Ross Circle)</span>
             </label>
           </div>
+          <label class="toggle-group">
+            <input type="checkbox" v-model="verticalMode" />
+            <span class="toggle-label font-semibold">Vertical Hanging Layout</span>
+          </label>
         </section>
 
         <!-- Color Themes Section -->
@@ -259,17 +264,30 @@ let cycleInterval = null;
 const ledEmulation = ref(false);
 const selectedResolution = ref('64x32');
 const starLayout = ref(0); // 0 = 50-star grid, 1 = 13-star circle
+const verticalMode = ref(false); // true = vertical hanging, false = horizontal
 
 const ledWidth = computed(() => {
-  if (selectedResolution.value === '128x64') return 128;
-  if (selectedResolution.value === '74x39') return 74;
-  return 64;
+  let w = 64;
+  if (selectedResolution.value === '128x64') w = 128;
+  else if (selectedResolution.value === '74x39') w = 74;
+  
+  let h = 32;
+  if (selectedResolution.value === '128x64') h = 64;
+  else if (selectedResolution.value === '74x39') h = 39;
+  
+  return verticalMode.value ? h : w;
 });
 
 const ledHeight = computed(() => {
-  if (selectedResolution.value === '128x64') return 64;
-  if (selectedResolution.value === '74x39') return 39;
-  return 32;
+  let w = 64;
+  if (selectedResolution.value === '128x64') w = 128;
+  else if (selectedResolution.value === '74x39') w = 74;
+  
+  let h = 32;
+  if (selectedResolution.value === '128x64') h = 64;
+  else if (selectedResolution.value === '74x39') h = 39;
+  
+  return verticalMode.value ? w : h;
 });
 
 // Helper to determine dot colors for theme previews
