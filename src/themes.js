@@ -213,5 +213,15 @@ export const THEMES = {
     cantonColor: '#1A1A1A',
     starColor: '#E2E8F0',
     rainbowMode: false
+  },
+  allResponders: {
+    name: 'All Responders 🇺🇸',
+    stripeColors: [
+      '#1A1A1A', '#7F7F7F', '#1A1A1A', '#FFD700', '#1A1A1A', '#00A300',
+      '#1A1A1A', '#002DFF', '#1A1A1A', '#E50000', '#1A1A1A', '#FFFFFF', '#1A1A1A'
+    ],
+    cantonColor: '#1A1A1A',
+    starColor: '#E2E8F0',
+    rainbowMode: false
   }
 };

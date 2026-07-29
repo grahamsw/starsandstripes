@@ -58,7 +58,8 @@ THEMES = [
     "thin_red",
     "first_responders",
     "thin_green",
-    "thin_gold"
+    "thin_gold",
+    "all_responders"
 ]
 CYCLE_INTERVAL = 10.0      # Cycle to next flag every 10 seconds
 TRANSITION_SPEED = 0.08    # Interpolation rate per frame (~1.2s crossfade)
@@ -221,6 +222,13 @@ def get_theme_colors(theme_name, t=0.0):
             stripes[7] = (0, 163, 0)
         elif theme_name == "thin_gold":
             stripes[7] = (255, 215, 0)
+        elif theme_name == "all_responders":
+            stripes[1] = (127, 127, 127)  # Correctional Grey
+            stripes[3] = (255, 215, 0)    # Dispatcher Gold
+            stripes[5] = (0, 163, 0)      # Military Green
+            stripes[7] = (0, 45, 255)     # Police Blue
+            stripes[9] = (229, 0, 0)      # Firefighter Red
+            stripes[11] = (255, 255, 255) # EMS White
             
     return stripes, canton, star
 
