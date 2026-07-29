@@ -39,6 +39,7 @@ enum Theme {
   THEME_THIN_BLUE_LINE,
   THEME_THIN_RED_LINE,
   THEME_FIRST_RESPONDERS,
+  THEME_ALL_RESPONDERS,
   THEME_VAPORWAVE,
   THEME_MONOCHROME,
   THEME_RAINBOW
@@ -87,6 +88,17 @@ ColorRGB getStripeColor(int stripeIdx, float t) {
       if (stripeIdx == 9) return {229, 0, 0};  // 5th White stripe is Red
       break;
       
+    case THEME_ALL_RESPONDERS:
+      colorA = {20, 20, 20}; // Black
+      colorB = {210, 210, 210}; // Grey
+      if (stripeIdx == 1) return {127, 127, 127}; // Corrections Grey
+      if (stripeIdx == 3) return {255, 215, 0};   // Dispatcher Gold
+      if (stripeIdx == 5) return {0, 163, 0};     // Military Green
+      if (stripeIdx == 7) return {0, 45, 255};    // Police Blue
+      if (stripeIdx == 9) return {229, 0, 0};     // Firefighter Red
+      if (stripeIdx == 11) return {255, 255, 255}; // EMS White
+      break;
+      
     case THEME_VAPORWAVE:
       colorA = {255, 113, 206}; // Hot Pink
       colorB = {185, 103, 255}; // Purple
@@ -114,7 +126,7 @@ ColorRGB getCantonBgColor(float t) {
     return hsvToRgb(fract(t * 0.08), 0.9, 0.22);
   }
   if (currentTheme == THEME_THIN_BLUE_LINE || currentTheme == THEME_THIN_RED_LINE || 
-      currentTheme == THEME_FIRST_RESPONDERS) {
+      currentTheme == THEME_FIRST_RESPONDERS || currentTheme == THEME_ALL_RESPONDERS) {
     return {26, 26, 26}; // Tactical Black canton
   }
   if (currentTheme == THEME_VAPORWAVE) {
