@@ -374,7 +374,7 @@ while True:
             elif abs(y_acc) > abs(x_acc) + 2.0:
                 vertical_mode = 0 # Landscape
         except Exception as e:
-            pass
+            print("Error polling accelerometer:", e)
             
     # 2. Check if layout or orientation changes triggered a redraw
     if (star_layout != last_star_layout) or (vertical_mode != last_vertical_mode):
