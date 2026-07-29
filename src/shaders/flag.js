@@ -4,6 +4,7 @@ uniform float uSpeed;
 uniform float uAmplitude;
 uniform vec2 uFrequency;
 uniform float uLedEmulation;
+uniform float uVerticalMode;
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -11,15 +12,30 @@ varying vec3 vPosition;
 
 // Wave generator function
 float getWaveHeight(vec2 pos) {
-  // Pin the hoist (left edge at uv.x = 0)
-  // Let the wave amplitude scale smoothly from 0.0 at the left to 1.0 at x = 0.15
-  float pinFactor = smoothstep(0.0, 0.15, pos.x);
+  float pinFactor;
+  float primaryPhase;
+  float secondaryPhase;
+  float crossAxis;
   
-  // Wave 1: primary wind waves moving diagonally
-  float w1 = sin(pos.x * uFrequency.x - uTime * uSpeed) * cos(pos.y * uFrequency.y - uTime * uSpeed);
+  if (uVerticalMode > 0.5) {
+    // Vertical hanging (pinned at the top pos.y = 1.0, waving downwards)
+    pinFactor = smoothstep(0.0, 0.15, 1.0 - pos.y);
+    primaryPhase = (1.0 - pos.y) * uFrequency.x - uTime * uSpeed;
+    secondaryPhase = (1.0 - pos.y) * uFrequency.x * 2.2 + pos.x * uFrequency.y * 1.3 - uTime * uSpeed * 1.6;
+    crossAxis = pos.x;
+  } else {
+    // Horizontal waving (pinned at the left pos.x = 0.0, waving rightwards)
+    pinFactor = smoothstep(0.0, 0.15, pos.x);
+    primaryPhase = pos.x * uFrequency.x - uTime * uSpeed;
+    secondaryPhase = pos.x * uFrequency.x * 2.2 + pos.y * uFrequency.y * 1.3 - uTime * uSpeed * 1.6;
+    crossAxis = pos.y;
+  }
+  
+  // Wave 1: primary wind waves moving along length
+  float w1 = sin(primaryPhase) * cos(crossAxis * uFrequency.y - uTime * uSpeed);
   
   // Wave 2: higher-frequency secondary wave for organic cloth jitter
-  float w2 = sin(pos.x * uFrequency.x * 2.2 + pos.y * uFrequency.y * 1.3 - uTime * uSpeed * 1.6) * 0.35;
+  float w2 = sin(secondaryPhase) * 0.35;
   
   return (w1 + w2) * uAmplitude * pinFactor * (1.0 - uLedEmulation);
 }
@@ -38,9 +54,11 @@ void main() {
   float heightY = getWaveHeight(uv + vec2(0.0, eps));
   
   // Convert UV offsets to local space tangent vectors
-  // Flag dimensions in 3D scene are 1.9 wide by 1.0 high
-  vec3 tangentX = vec3(eps * 1.9, 0.0, heightX - height);
-  vec3 tangentY = vec3(0.0, eps * 1.0, heightY - height);
+  // Flag dimensions in 3D scene are 1.9 wide by 1.0 high, scaled by uVerticalMode
+  float aspectX = mix(1.9, 1.0, uVerticalMode);
+  float aspectY = mix(1.0, 1.9, uVerticalMode);
+  vec3 tangentX = vec3(eps * aspectX, 0.0, heightX - height);
+  vec3 tangentY = vec3(0.0, eps * aspectY, heightY - height);
   
   vec3 localNormal = normalize(cross(tangentX, tangentY));
   vNormal = normalize(normalMatrix * localNormal);
@@ -64,6 +82,7 @@ uniform vec2 uLedResolution;
 uniform vec2 uFrequency;
 uniform float uSpeed;
 uniform float uStarLayout;
+uniform float uVerticalMode;
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -95,30 +114,51 @@ void main() {
   vec2 uvLed = (floor(vUv * uLedResolution) + vec2(0.5)) / uLedResolution;
   vec2 sampleUv = mix(vUv, uvLed, uLedEmulation);
 
-  // 1. Draw Stripes (13 horizontal bands)
-  // Blend continuously between the static theme stripes and the scrolling rainbow
-  // so switching themes crossfades instead of popping at the uRainbowMode midpoint.
-  float stripeIndex = clamp(floor(sampleUv.y * 13.0), 0.0, 12.0);
+  // 1. Draw Stripes (13 bands)
+  float stripeIndexF = mix(sampleUv.y, sampleUv.x, uVerticalMode) * 13.0;
+  float stripeIndex = clamp(floor(stripeIndexF), 0.0, 12.0);
   vec3 staticStripeColor = uStripeColors[int(stripeIndex)];
-  vec3 rainbowStripeColor = hsv2rgb(vec3(fract(sampleUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
+  
+  float rainbowCoord = mix(sampleUv.y, sampleUv.x, uVerticalMode);
+  vec3 rainbowStripeColor = hsv2rgb(vec3(fract(rainbowCoord * 1.3 - uTime * 0.45), 1.0, 1.0));
   vec3 stripeColor = mix(staticStripeColor, rainbowStripeColor, uRainbowMode);
   
-  // 2. Draw Canton (Union - top left)
-  bool inCanton = (sampleUv.x < 0.4 && sampleUv.y > 6.0 / 13.0);
+  // 2. Draw Canton (Union) - top left
+  bool inCanton = false;
+  if (uVerticalMode > 0.5) {
+    inCanton = (sampleUv.x < 7.0 / 13.0 && sampleUv.y > 0.6);
+  } else {
+    inCanton = (sampleUv.x < 0.4 && sampleUv.y > 6.0 / 13.0);
+  }
   
   vec3 cantonColor = uCantonColor;
   
   if (inCanton) {
+    // Dynamic canton aspect ratio
+    float cantonAspect = mix(1.4111, 0.7085, uVerticalMode);
+    
     // Normalize coordinates inside the canton to [0.0, 1.0]
-    vec2 cUv = vec2(sampleUv.x / 0.4, (sampleUv.y - 6.0 / 13.0) / (7.0 / 13.0));
+    vec2 cUv;
+    float cantonW;
+    float cantonH;
+    float px_local;
+    float py_local;
     
-    // Get the physical LED grid boundaries of the canton dynamically
-    float cantonW = floor(uLedResolution.x * 0.4 - 0.5) + 1.0;
-    float cantonH = uLedResolution.y - ceil(uLedResolution.y * 6.0 / 13.0 - 0.5);
-    
-    // Local integer pixel coordinate of the current LED cell inside the canton
-    float px_local = floor(sampleUv.x * uLedResolution.x);
-    float py_local = floor(sampleUv.y * uLedResolution.y) - (uLedResolution.y - cantonH);
+    if (uVerticalMode > 0.5) {
+      cUv = vec2(sampleUv.x / (7.0 / 13.0), (sampleUv.y - 0.6) / 0.4);
+      cantonW = floor(uLedResolution.x * (7.0 / 13.0) - 0.5) + 1.0;
+      cantonH = floor(uLedResolution.y * 0.4 - 0.5) + 1.0;
+      
+      px_local = floor(sampleUv.x * uLedResolution.x);
+      py_local = floor(sampleUv.y * uLedResolution.y) - (uLedResolution.y - cantonH);
+    } else {
+      cUv = vec2(sampleUv.x / 0.4, (sampleUv.y - 6.0 / 13.0) / (7.0 / 13.0));
+      cantonW = floor(uLedResolution.x * 0.4 - 0.5) + 1.0;
+      cantonH = uLedResolution.y - ceil(uLedResolution.y * 6.0 / 13.0 - 0.5);
+      
+      px_local = floor(sampleUv.x * uLedResolution.x);
+      py_local = floor(sampleUv.y * uLedResolution.y) - (uLedResolution.y - cantonH);
+    }
     
     // Normalized canton coordinates mapped exactly to the LED pixel grid
     vec2 cUv_led = (vec2(px_local, py_local) + vec2(0.5)) / vec2(cantonW, cantonH);
@@ -155,7 +195,7 @@ void main() {
         float borderFadeY = smoothstep(0.0500, 0.040, abs(localUv.y));
         float borderFade = borderFadeX * borderFadeY;
         
-        localUv.x *= 1.4111;
+        localUv.x *= cantonAspect;
         
         float pixelSize = 1.0 / cantonH;
         float edgeWidth = mix(0.0025, 0.45 * pixelSize, uLedEmulation);
@@ -175,7 +215,7 @@ void main() {
     float starPhase13 = 0.0;
     
     vec2 uvCentered = activeCUv - vec2(0.5);
-    uvCentered.x *= 1.4111;
+    uvCentered.x *= cantonAspect;
     
     float minDist = 1e6;
     vec2 closestStarCenter = vec2(0.0);
@@ -185,12 +225,12 @@ void main() {
       float angle = float(i) * (2.0 * 3.14159265359 / 13.0) - 3.14159265359 / 2.0;
       
       // Snapping circular star centers to LED pixels in unscaled canton space
-      vec2 starCenterUnscaled = vec2(cos(angle) / 1.4111, sin(angle)) * 0.33 + vec2(0.5);
+      vec2 starCenterUnscaled = vec2(cos(angle) / cantonAspect, sin(angle)) * 0.33 + vec2(0.5);
       vec2 starCenterPixels = (floor(starCenterUnscaled * vec2(cantonW, cantonH)) + vec2(0.5)) / vec2(cantonW, cantonH);
       vec2 snappedStarCenterUnscaled = mix(starCenterUnscaled, starCenterPixels, uLedEmulation);
       
       vec2 starCenterLoc = (snappedStarCenterUnscaled - vec2(0.5));
-      starCenterLoc.x *= 1.4111;
+      starCenterLoc.x *= cantonAspect;
       
       float distVal = length(uvCentered - starCenterLoc);
       if (distVal < minDist) {
@@ -222,7 +262,7 @@ void main() {
     float rainbowIntensity = 0.35 + 0.65 * sin(uTime * 4.0 + starPhase);
     float starIntensity = mix(staticIntensity, rainbowIntensity, uRainbowMode);
     
-    vec3 rainbowStarColor = hsv2rgb(vec3(fract(sampleUv.y * 1.3 - uTime * 0.45), 1.0, 1.0));
+    vec3 rainbowStarColor = hsv2rgb(vec3(fract(rainbowCoord * 1.3 - uTime * 0.45), 1.0, 1.0));
     vec3 activeStarColor = mix(uStarColor, rainbowStarColor, uRainbowMode);
     
     vec3 rainbowCantonBg = hsv2rgb(vec3(fract(uTime * 0.08), 0.9, 0.22));
