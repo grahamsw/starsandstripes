@@ -124,16 +124,23 @@ try:
     password = os.getenv("CIRCUITPY_WIFI_PASSWORD")
     
     if ssid and password:
-        print("WiFi: Connecting to", ssid)
+        print("WiFi: Connecting...")
+        display.refresh()
         esp.connect_AP(ssid, password)
         ip_address = esp.pretty_ip(esp.ip_address)
-        print("WiFi Connected! IP:", ip_address)
-        # Sleep for 4 seconds to let the user read the IP address on the default terminal screen
-        time.sleep(4.0)
+        print("WiFi Connected!")
+        print("IP Address:")
+        print(ip_address)
+        display.refresh()
+        # Sleep for 5 seconds to let the user read the IP address on the default terminal screen
+        time.sleep(5.0)
     else:
-        print("WiFi: No credentials in settings.toml")
+        print("WiFi: No config")
+        display.refresh()
 except Exception as e:
-    print("WiFi Connection Failed:", e)
+    print("WiFi Failed:", e)
+    display.refresh()
+    time.sleep(2.0)
 
 # 2. Setup WSGI HTTP Server
 wsgi_server = None
@@ -761,7 +768,7 @@ while True:
     # 1. WSGI Server loop check
     if wsgi_server:
         try:
-            wsgi_server.loop()
+            wsgi_server.update_poll()
         except Exception as e:
             print("WSGI Server loop error:", e)
             
