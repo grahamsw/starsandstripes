@@ -368,12 +368,80 @@ const toggleCycle = () => {
   }
 };
 
+let startX = 0;
+let startY = 0;
+
+const handleMouseDown = (e) => {
+  startX = e.clientX;
+  startY = e.clientY;
+};
+
+const handleMouseUp = (e) => {
+  const diffX = Math.abs(e.clientX - startX);
+  const diffY = Math.abs(e.clientY - startY);
+  
+  // If user moved the cursor more than 5 pixels, it's a drag operation.
+  // We ignore it so dragging to rotate the WebGL camera doesn't close the panel.
+  if (diffX > 5 || diffY > 5) return;
+  
+  const panel = document.querySelector('.dashboard');
+  const toggleBtn = document.querySelector('.show-controls-btn');
+  
+  if (panel && !panel.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target))) {
+    if (!isSidebarCollapsed.value) {
+      isSidebarCollapsed.value = true;
+    }
+  }
+};
+
+const handleTouchStart = (e) => {
+  if (e.touches.length > 0) {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }
+};
+
+const handleTouchEnd = (e) => {
+  if (e.changedTouches.length > 0) {
+    const diffX = Math.abs(e.changedTouches[0].clientX - startX);
+    const diffY = Math.abs(e.changedTouches[0].clientY - startY);
+    if (diffX > 5 || diffY > 5) return;
+    
+    const panel = document.querySelector('.dashboard');
+    const toggleBtn = document.querySelector('.show-controls-btn');
+    
+    if (panel && !panel.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target))) {
+      if (!isSidebarCollapsed.value) {
+        isSidebarCollapsed.value = true;
+      }
+    }
+  }
+};
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape' || e.key === 'Esc') {
+    if (!isSidebarCollapsed.value) {
+      isSidebarCollapsed.value = true;
+    }
+  }
+};
+
 onMounted(() => {
   startCycling();
+  window.addEventListener('mousedown', handleMouseDown);
+  window.addEventListener('mouseup', handleMouseUp);
+  window.addEventListener('touchstart', handleTouchStart);
+  window.addEventListener('touchend', handleTouchEnd);
+  window.addEventListener('keydown', handleKeyDown);
 });
 
 onBeforeUnmount(() => {
   stopCycling();
+  window.removeEventListener('mousedown', handleMouseDown);
+  window.removeEventListener('mouseup', handleMouseUp);
+  window.removeEventListener('touchstart', handleTouchStart);
+  window.removeEventListener('touchend', handleTouchEnd);
+  window.removeEventListener('keydown', handleKeyDown);
 });
 </script>
 
