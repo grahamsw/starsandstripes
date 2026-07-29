@@ -1,0 +1,5 @@
+# CircuitPython WiFi configuration
+# Fill in your network details and save as 'settings.toml' on your CIRCUITPY drive.
+
+CIRCUITPY_WIFI_SSID = "your_wifi_name_here"
+CIRCUITPY_WIFI_PASSWORD = "your_wifi_password_here"
