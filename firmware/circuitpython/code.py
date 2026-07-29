@@ -1,4 +1,4 @@
-# Physical LED Matrix Flag - Auto-Cycling, Fading, and Accelerometer Auto-Rotation
+# Physical LED Matrix Flag - Auto-Cycling, Fading, Accelerometer, and Phone Web Server
 # Target Board: Adafruit Matrix Portal M4 (SAMD51)
 # Display: 64x32 RGB HUB75 LED Panel (1/16 Scan)
 # 
@@ -10,11 +10,14 @@ import framebufferio
 import displayio
 import time
 import math
+import os
+import json
+from digitalio import DigitalInOut
 
 # Release any active displays to free up pins
 displayio.release_displays()
 
-# Pin configuration for Adafruit Matrix Portal M4
+# Pin configuration for Adafruit Matrix Portal M4 HUB75 Display
 matrix = rgbmatrix.RGBMatrix(
     width=64,
     height=32,
@@ -35,12 +38,6 @@ matrix = rgbmatrix.RGBMatrix(
 # Associate matrix with displayio framebuffer
 display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
 
-# Create 64x32 bitmap for draw operations
-bitmap = displayio.Bitmap(64, 32, 256)
-
-# Build a palette of 256 colors segmented into 15 logical groups (16 slots per group)
-palette = displayio.Palette(256)
-
 # Configurable Parameters
 THEMES = [
     "classic",
@@ -60,22 +57,414 @@ THEMES = [
 ]
 CYCLE_INTERVAL = 10.0      # Cycle to next flag every 10 seconds
 TRANSITION_SPEED = 0.08    # Interpolation rate per frame (~1.2s crossfade)
+
+# Active State Variables
 star_layout = 0            # 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
 vertical_mode = 0          # 0 = horizontal (landscape), 1 = vertical (portrait)
+is_cycling = True          # Enable/disable theme cycling
+enabled_themes = THEMES.copy() # List of themes allowed in cycle loop
+active_theme = THEMES[0]
 
-# Initialize I2C Accelerometer for auto-rotation
-accelerometer = None
+def save_config():
+    """Saves the current config to a local JSON file on flash memory."""
+    try:
+        config = {
+            "star_layout": star_layout,
+            "vertical_mode": vertical_mode,
+            "is_cycling": is_cycling,
+            "enabled_themes": enabled_themes,
+            "active_theme": active_theme
+        }
+        with open("/config.json", "w") as f:
+            json.dump(config, f)
+        print("Configuration saved successfully to flash.")
+    except Exception as e:
+        # Note: Flash is write-protected if board is currently connected to a PC as USB storage
+        print("Could not save config to flash (likely read-only USB mass storage active):", e)
+
+def load_config():
+    """Loads the config from local JSON file if it exists."""
+    global star_layout, vertical_mode, is_cycling, enabled_themes, active_theme
+    try:
+        with open("/config.json", "r") as f:
+            config = json.load(f)
+            if "star_layout" in config:
+                star_layout = config["star_layout"]
+            if "vertical_mode" in config:
+                vertical_mode = config["vertical_mode"]
+            if "is_cycling" in config:
+                is_cycling = config["is_cycling"]
+            if "enabled_themes" in config:
+                enabled_themes = [t for t in config["enabled_themes"] if t in THEMES]
+            if "active_theme" in config:
+                if config["active_theme"] in THEMES:
+                    active_theme = config["active_theme"]
+        print("Loaded configuration from flash successfully.")
+    except Exception as e:
+        print("No saved config found or failed to load. Using defaults.")
+
+# Load saved configurations before starting WiFi
+load_config()
+
+# 1. Connect to local WiFi using SPI co-processor (ESP32 AirLift)
+ip_address = "No WiFi"
+esp = None
 try:
-    import adafruit_lis3dh
-    # The LIS3DH on the Matrix Portal M4 is wired to the internal I2C bus:
-    i2c = board.I2C()
-    # The I2C address of LIS3DH on Matrix Portal is 0x19
-    accelerometer = adafruit_lis3dh.LIS3DH_I2C(i2c, address=0x19)
-    accelerometer.range = adafruit_lis3dh.RANGE_2_G
-    print("LIS3DH Accelerometer initialized successfully! Auto-rotation active.")
+    import busio
+    from adafruit_esp32spi import adafruit_esp32spi
+    
+    # Initialize ESP32 SPI connection
+    esp32_cs = DigitalInOut(board.ESP_CS)
+    esp32_ready = DigitalInOut(board.ESP_BUSY)
+    esp32_reset = DigitalInOut(board.ESP_RESET)
+    spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+    esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
+    
+    ssid = os.getenv("CIRCUITPY_WIFI_SSID")
+    password = os.getenv("CIRCUITPY_WIFI_PASSWORD")
+    
+    if ssid and password:
+        print("WiFi: Connecting to", ssid)
+        esp.connect_AP(ssid, password)
+        ip_address = esp.pretty_ip(esp.ip_address)
+        print("WiFi Connected! IP:", ip_address)
+        # Sleep for 4 seconds to let the user read the IP address on the default terminal screen
+        time.sleep(4.0)
+    else:
+        print("WiFi: No credentials in settings.toml")
 except Exception as e:
-    print("Accelerometer not initialized (missing library or hardware issue):", e)
-    print("Falling back to manual horizontal layout mode.")
+    print("WiFi Connection Failed:", e)
+
+# 2. Setup WSGI HTTP Server
+wsgi_server = None
+if esp and esp.is_connected:
+    try:
+        import adafruit_wsgi.esp32spi_wsgiserver as server
+        from adafruit_wsgi.wsgi_app import WSGIApp
+        import adafruit_esp32spi.adafruit_esp32spi_socket as socket
+        
+        web_app = WSGIApp()
+        
+        INDEX_HTML = """<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LED Flag Control Panel</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #090d16;
+      color: #f8fafc;
+      padding: 16px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .card {
+      background: rgba(30, 41, 59, 0.45);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 440px;
+      box-sizing: border-box;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      color: #38bdf8;
+      text-align: center;
+      font-size: 24px;
+      font-weight: 800;
+    }
+    h2 {
+      margin: 0 0 16px 0;
+      color: #94a3b8;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding-bottom: 8px;
+    }
+    .status {
+      text-align: center;
+      font-size: 14px;
+      color: #64748b;
+      margin-bottom: 24px;
+      background: rgba(15, 23, 42, 0.4);
+      padding: 6px 12px;
+      border-radius: 30px;
+      display: inline-block;
+      align-self: center;
+    }
+    .btn-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .btn {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-size: 15px;
+      cursor: pointer;
+      width: 100%;
+      font-weight: 700;
+      transition: background 0.15s, transform 0.1s;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-sizing: border-box;
+    }
+    .btn:active {
+      transform: scale(0.98);
+      background: #0369a1;
+    }
+    .btn-secondary {
+      background: rgba(71, 85, 105, 0.4);
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .btn-secondary:active {
+      background: rgba(51, 65, 85, 0.6);
+    }
+    .theme-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .theme-row:last-child {
+      border-bottom: none;
+    }
+    .theme-info {
+      display: flex;
+      flex-direction: column;
+    }
+    .theme-name {
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .theme-active-tag {
+      font-size: 11px;
+      color: #38bdf8;
+      font-weight: bold;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 46px;
+      height: 24px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #334155;
+      transition: 0.3s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px; width: 16px; left: 4px; bottom: 4px;
+      background-color: #f8fafc;
+      transition: 0.25s;
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #0284c7; }
+    input:checked + .slider:before { transform: translateX(22px); }
+  </style>
+</head>
+<body>
+  <div class="card" style="display: flex; flex-direction: column;">
+    <h1>🇺🇸 Flag Control</h1>
+    <div class="status" id="status-text">Connecting...</div>
+    
+    <div class="btn-container">
+      <button class="btn" id="btn-cycle" onclick="toggleCycle()">Theme Cycling: ON</button>
+      <button class="btn btn-secondary" onclick="toggleStarLayout()">Toggle Star Layout</button>
+      <button class="btn btn-secondary" onclick="toggleVerticalLayout()">Toggle Vertical Layout</button>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>Cycle List & Themes</h2>
+    <div id="themes-list"></div>
+  </div>
+
+  <script>
+    let state = {};
+    
+    function parseQuery(q) {
+      return q;
+    }
+    
+    async function loadState() {
+      try {
+        let res = await fetch('/api/state');
+        state = await res.json();
+        
+        document.getElementById('status-text').innerText = 'Active: ' + state.active_theme.replace('_', ' ');
+        document.getElementById('btn-cycle').innerText = 'Theme Cycling: ' + (state.cycling ? 'ON' : 'OFF');
+        document.getElementById('btn-cycle').className = state.cycling ? 'btn' : 'btn btn-secondary';
+        
+        let html = '';
+        state.themes.forEach(theme => {
+          let checked = state.enabled_themes.includes(theme) ? 'checked' : '';
+          let isActive = state.active_theme === theme;
+          let labelText = theme.replace('_', ' ');
+          
+          html += `<div class="theme-row">
+            <div class="theme-info" onclick="selectTheme('${theme}')" style="cursor: pointer; flex-grow: 1;">
+              <span class="theme-name" style="${isActive ? 'color: #38bdf8;' : ''}">${labelText}</span>
+              ${isActive ? '<span class="theme-active-tag">CURRENTLY RENDERING</span>' : ''}
+            </div>
+            <label class="switch">
+              <input type="checkbox" ${checked} onchange="toggleTheme('${theme}', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>`;
+        });
+        document.getElementById('themes-list').innerHTML = html;
+      } catch (e) {
+        document.getElementById('status-text').innerText = 'Connection Error';
+      }
+    }
+    
+    async function toggleCycle() {
+      await fetch('/api/control?cycling=' + (!state.cycling));
+      loadState();
+    }
+    
+    async function toggleStarLayout() {
+      let next = state.star_layout === 0 ? 1 : 0;
+      await fetch('/api/control?star_layout=' + next);
+      loadState();
+    }
+    
+    async function toggleVerticalLayout() {
+      let next = state.vertical_mode === 0 ? 1 : 0;
+      await fetch('/api/control?vertical_mode=' + next);
+      loadState();
+    }
+    
+    async function selectTheme(theme) {
+      await fetch('/api/control?theme=' + theme);
+      loadState();
+    }
+    
+    async function toggleTheme(theme, checked) {
+      let list = [...state.enabled_themes];
+      if (checked) {
+        if (!list.includes(theme)) list.push(theme);
+      } else {
+        list = list.filter(t => t !== theme);
+      }
+      await fetch('/api/control?enabled_themes=' + list.join(','));
+      loadState();
+    }
+    
+    // Poll for status updates
+    setInterval(async () => {
+      try {
+        let res = await fetch('/api/state');
+        let data = await res.json();
+        state.active_theme = data.active_theme;
+        state.cycling = data.cycling;
+        document.getElementById('status-text').innerText = 'Active: ' + state.active_theme.replace('_', ' ');
+        document.getElementById('btn-cycle').innerText = 'Theme Cycling: ' + (state.cycling ? 'ON' : 'OFF');
+        document.getElementById('btn-cycle').className = state.cycling ? 'btn' : 'btn btn-secondary';
+      } catch (e) {}
+    }, 3000);
+    
+    loadState();
+  </script>
+</body>
+</html>
+"""
+
+        def parse_query_string(qs):
+            params = {}
+            if not qs:
+                return params
+            for item in qs.split("&"):
+                if "=" in item:
+                    k, v = item.split("=", 1)
+                    params[k] = v
+            return params
+
+        @web_app.route("/")
+        def index_route(request):
+            return ("200 OK", [("Content-Type", "text/html")], [INDEX_HTML])
+
+        @web_app.route("/api/state")
+        def state_route(request):
+            data = {
+                "active_theme": active_theme,
+                "cycling": is_cycling,
+                "star_layout": star_layout,
+                "vertical_mode": vertical_mode,
+                "themes": THEMES,
+                "enabled_themes": enabled_themes
+            }
+            return ("200 OK", [("Content-Type", "application/json")], [json.dumps(data)])
+
+        @web_app.route("/api/control")
+        def control_route(request):
+            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes
+            params = parse_query_string(request.query_string)
+            
+            needs_save = False
+            
+            if "cycling" in params:
+                is_cycling = (params["cycling"] == "true")
+                needs_save = True
+                
+            if "star_layout" in params:
+                star_layout = int(params["star_layout"])
+                needs_save = True
+                
+            if "vertical_mode" in params:
+                vertical_mode = int(params["vertical_mode"])
+                needs_save = True
+                
+            if "theme" in params:
+                if params["theme"] in THEMES:
+                    active_theme = params["theme"]
+                    is_cycling = False # Stop cycling when theme manually forced
+                    needs_save = True
+                    
+            if "enabled_themes" in params:
+                val = params["enabled_themes"]
+                if val:
+                    enabled_themes = [t for t in val.split(",") if t in THEMES]
+                else:
+                    enabled_themes = []
+                needs_save = True
+                
+            if needs_save:
+                save_config()
+                
+            return ("200 OK", [("Content-Type", "application/json")], [json.dumps({"status": "ok"})])
+
+        server.set_interface(esp)
+        socket.set_interface(esp)
+        wsgi_server = server.WSGIServer(port=80, application=web_app)
+        wsgi_server.start()
+        print("WSGI HTTP Server successfully started on port 80.")
+    except Exception as e:
+        print("Failed to initialize WSGI HTTP Server:", e)
+
+# 3. Create 64x32 bitmap for draw operations
+bitmap = displayio.Bitmap(64, 32, 256)
+palette = displayio.Palette(256)
 
 def hsv_to_rgb(h, s, v):
     """Utility to convert HSV values (0..1) to RGB (0..255)."""
@@ -152,7 +541,7 @@ def get_theme_colors(theme_name, t=0.0):
         canton = (43, 16, 74)
         star = (255, 255, 255)
 
-    # 4. Trans Pride 🏳️‍⚧️
+    # 4. Trans Pride
     elif theme_name == "transgender":
         l_blue = (91, 206, 250)
         pink = (245, 169, 184)
@@ -233,7 +622,7 @@ def get_theme_colors(theme_name, t=0.0):
         elif theme_name == "thin_gold":
             stripes[7] = (255, 215, 0)
         elif theme_name == "all_responders":
-            stripes[1] = (127, 127, 127)  # Correctional Grey
+            stripes[1] = (127, 127, 127)  # Corrections Grey
             stripes[3] = (255, 215, 0)    # Dispatcher Gold
             stripes[5] = (0, 163, 0)      # Military Green
             stripes[7] = (0, 45, 255)     # Police Blue
@@ -242,9 +631,6 @@ def get_theme_colors(theme_name, t=0.0):
             
     return stripes, canton, star
 
-# Initialize active colors
-current_theme_idx = 0
-active_theme = THEMES[current_theme_idx]
 target_stripes, target_canton, target_star = get_theme_colors(active_theme, 0.0)
 
 current_stripes = [[float(c) for c in s] for s in target_stripes]
@@ -252,7 +638,7 @@ current_canton = [float(c) for c in target_canton]
 current_star = [float(c) for c in target_star]
 
 def update_hardware_palette():
-    """Builds a 16-step flat palette gradient using the active colors (shading level 15 is full brightness)."""
+    """Builds a 16-step flat palette gradient using the active colors."""
     for i in range(13):
         color = current_stripes[i]
         for s in range(16):
@@ -293,7 +679,7 @@ for i in range(13):
     star_y = int(math.sin(angle) * 0.33 * 17.0 + 8.5)
     stars_13_horizontal.append((star_x, star_y))
 
-# Pre-calculate star coordinate sets (Portrait layout - rotated 90 degrees)
+# Pre-calculate star coordinate sets (Portrait layout)
 stars_50_vertical = []
 for r in range(1, 10):
     for c in range(1, 12):
@@ -309,14 +695,13 @@ for i in range(13):
     star_x = int(math.sin(angle) * 0.33 * 26.0 + 13.0) + 38
     stars_13_vertical.append((star_x, star_y))
 
-# Convert to sets for fast O(1) hash lookup
 stars_50_horizontal_set = set(stars_50_horizontal)
 stars_13_horizontal_set = set(stars_13_horizontal)
 stars_50_vertical_set = set(stars_50_vertical)
 stars_13_vertical_set = set(stars_13_vertical)
 
 def render_static_bitmap(layout_mode, vert_mode):
-    """Draws the flag shapes on the bitmap once. Shading index 15 means flat full-brightness."""
+    """Draws the flag shapes on the bitmap once."""
     if vert_mode == 1:
         active_stars = stars_13_vertical_set if layout_mode == 1 else stars_50_vertical_set
     else:
@@ -325,11 +710,9 @@ def render_static_bitmap(layout_mode, vert_mode):
     for y in range(32):
         for x in range(64):
             if vert_mode == 1:
-                # Vertical hanging mode (Canton is at top-left: y < 17 and x >= 38)
                 in_canton = (y < 17 and x >= 38)
                 stripe_idx = (y * 13) // 32
             else:
-                # Horizontal mode (Canton is at top-left: x < 26 and y < 17)
                 in_canton = (x < 26 and y < 17)
                 stripe_idx = (y * 13) // 32
                 
@@ -343,7 +726,7 @@ def render_static_bitmap(layout_mode, vert_mode):
             else:
                 bitmap[x, y] = stripe_base_offset + 15
 
-# Initial bitmap draw
+# Initial setup
 render_static_bitmap(star_layout, vertical_mode)
 update_hardware_palette()
 
@@ -353,47 +736,69 @@ group = displayio.Group()
 group.append(tile_grid)
 display.root_group = group
 
+# Initialize Accelerometer
+accelerometer = None
+try:
+    import adafruit_lis3dh
+    i2c = board.I2C()
+    accelerometer = adafruit_lis3dh.LIS3DH_I2C(i2c, address=0x19)
+    accelerometer.range = adafruit_lis3dh.RANGE_2_G
+    print("LIS3DH Accelerometer initialized successfully!")
+except Exception as e:
+    print("Accelerometer not initialized:", e)
+
 start_time = time.monotonic()
 last_cycle_time = start_time
 last_star_layout = star_layout
 last_vertical_mode = vertical_mode
 
-print("Animated Flag Matrix Running with Accelerometer Auto-Rotation!")
+print("Animated Flag Matrix running loop!")
 
 while True:
     now = time.monotonic()
     t = now - start_time
     
-    # 1. Read Accelerometer to determine layout orientation
+    # 1. WSGI Server loop check
+    if wsgi_server:
+        try:
+            wsgi_server.loop()
+        except Exception as e:
+            print("WSGI Server loop error:", e)
+            
+    # 2. Read Accelerometer for auto-rotation
     if accelerometer:
         try:
             x_acc, y_acc, z_acc = accelerometer.acceleration
-            # If long axis (x) has stronger gravitational pull than short axis (y)
             if abs(x_acc) > abs(y_acc) + 2.0:
-                vertical_mode = 1 # Portrait
+                vertical_mode = 1
             elif abs(y_acc) > abs(x_acc) + 2.0:
-                vertical_mode = 0 # Landscape
+                vertical_mode = 0
         except Exception as e:
             print("Error polling accelerometer:", e)
             
-    # 2. Check if layout or orientation changes triggered a redraw
+    # 3. Check layout or orientation change
     if (star_layout != last_star_layout) or (vertical_mode != last_vertical_mode):
         last_star_layout = star_layout
         last_vertical_mode = vertical_mode
-        print("Flipping display layout. Vertical Mode: " + str(vertical_mode))
+        print("Changing layout. Vertical Mode:", vertical_mode)
         render_static_bitmap(star_layout, vertical_mode)
         
-    # 3. Cycle theme timer
-    if now - last_cycle_time > CYCLE_INTERVAL:
+    # 4. Cycle theme timer (only if is_cycling is enabled)
+    if is_cycling and (now - last_cycle_time > CYCLE_INTERVAL):
         last_cycle_time = now
-        current_theme_idx = (current_theme_idx + 1) % len(THEMES)
-        active_theme = THEMES[current_theme_idx]
-        print("Cycling to theme: " + active_theme)
-        
-    # Retrieve target colors
+        if enabled_themes:
+            try:
+                current_idx = enabled_themes.index(active_theme)
+                next_idx = (current_idx + 1) % len(enabled_themes)
+                active_theme = enabled_themes[next_idx]
+            except ValueError:
+                active_theme = enabled_themes[0]
+            print("Cycling to theme:", active_theme)
+            
+    # Fetch theme colors
     target_stripes, target_canton, target_star = get_theme_colors(active_theme, t)
     
-    # 4. Lerp active colors towards target colors
+    # 5. Lerp active colors towards target
     for i in range(13):
         for c in range(3):
             current_stripes[i][c] += (target_stripes[i][c] - current_stripes[i][c]) * TRANSITION_SPEED
@@ -401,9 +806,6 @@ while True:
         current_canton[c] += (target_canton[c] - current_canton[c]) * TRANSITION_SPEED
         current_star[c] += (target_star[c] - current_star[c]) * TRANSITION_SPEED
         
-    # 5. Push colors to hardware palette
     update_hardware_palette()
-    
-    # Refresh display buffer
     display.refresh()
     time.sleep(0.016)
