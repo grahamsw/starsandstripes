@@ -152,6 +152,10 @@ for i in range(13):
     star_y = int(math.sin(angle) * 0.33 * 17.0 + 8.5)
     stars_13.append((star_x, star_y))
 
+# Convert to sets for O(1) hash lookup
+stars_50_set = set(stars_50)
+stars_13_set = set(stars_13)
+
 start_time = time.monotonic()
 last_cycle_time = start_time
 
@@ -180,6 +184,9 @@ while True:
     # 3. Update the hardware palette colors
     update_hardware_palette()
     
+    # Select active star set
+    active_stars = stars_13_set if star_layout == 1 else stars_50_set
+    
     # 4. Render the pixels with moving diagonal wave shading
     for y in range(32):
         v = y / 31.0
@@ -200,23 +207,8 @@ while True:
             
             # Draw Canton vs Stripes
             if x < 26 and in_canton_y:
-                is_star = False
-                if star_layout == 0:
-                    for s_x, s_y in stars_50:
-                        dx = abs(x - s_x)
-                        dy = abs(y - s_y)
-                        if dx <= 1 and dy <= 1 and (dx + dy) <= 1:
-                            is_star = True
-                            break
-                else:
-                    for s_x, s_y in stars_13:
-                        dx = abs(x - s_x)
-                        dy = abs(y - s_y)
-                        if dx <= 1 and dy <= 1 and (dx + dy) <= 1:
-                            is_star = True
-                            break
-                            
-                if is_star:
+                # O(1) lookup check for sharp 1-pixel stars
+                if (x, y) in active_stars:
                     bitmap[x, y] = 224 + shading_idx # Stars (offset 224)
                 else:
                     bitmap[x, y] = 208 + shading_idx # Canton (offset 208)
