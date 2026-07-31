@@ -744,31 +744,31 @@ current_canton = [float(c) for c in target_canton]
 current_star = [float(c) for c in target_star]
 
 def update_hardware_palette():
-    """Builds a 16-step flat palette gradient using the active colors."""
+    """Builds a 16-step flat palette gradient using the active colors with software brightness scaling."""
     for i in range(13):
         color = current_stripes[i]
         for s in range(16):
             shading = 0.70 + 0.30 * (s / 15.0)
             palette[i * 16 + s] = (
-                int(color[0] * shading),
-                int(color[1] * shading),
-                int(color[2] * shading)
+                int(color[0] * shading * brightness),
+                int(color[1] * shading * brightness),
+                int(color[2] * shading * brightness)
             )
             
     for s in range(16):
         shading = 0.70 + 0.30 * (s / 15.0)
         palette[208 + s] = (
-            int(current_canton[0] * shading),
-            int(current_canton[1] * shading),
-            int(current_canton[2] * shading)
+            int(current_canton[0] * shading * brightness),
+            int(current_canton[1] * shading * brightness),
+            int(current_canton[2] * shading * brightness)
         )
         
     for s in range(16):
         shading = 0.70 + 0.30 * (s / 15.0)
         palette[224 + s] = (
-            int(current_star[0] * shading),
-            int(current_star[1] * shading),
-            int(current_star[2] * shading)
+            int(current_star[0] * shading * brightness),
+            int(current_star[1] * shading * brightness),
+            int(current_star[2] * shading * brightness)
         )
 
 # Pre-calculate star coordinate sets (Landscape layout)
