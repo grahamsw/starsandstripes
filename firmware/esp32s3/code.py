@@ -6,19 +6,11 @@ import board
 import rgbmatrix
 import framebufferio
 import displayio
-import time
-import math
-import os
-import json
-import microcontroller
-import wifi
-import socketpool
-from adafruit_httpserver import Server, Request, Response
 
-# Release any active displays to free up pins
+# 1. Release any active displays to free up pins
 displayio.release_displays()
 
-# SeenGreat Adapter Board (E) Rev 2.2 Pin Mapping for ESP32-S3 DevKitC-1
+# 2. SeenGreat Adapter Board (E) Rev 2.2 Pin Mapping for ESP32-S3 DevKitC-1
 R1 = board.IO18
 G1 = board.IO8
 B1 = board.IO17
@@ -37,10 +29,11 @@ LAT = board.IO21
 OE = board.IO4
 
 print("Initializing RGBMatrix (128x64, 1/32 scan)...")
+# Allocate high-memory matrix buffer immediately at boot when SRAM is cleanest
 matrix = rgbmatrix.RGBMatrix(
     width=128,
     height=64,
-    bit_depth=4,  # Smooth color depth
+    bit_depth=2,  # 2-bit color depth (64 colors total) fits comfortably in SRAM
     rgb_pins=[R1, G1, B1, R2, G2, B2],
     addr_pins=[A, B, C, D, E],
     clock_pin=CLK,
@@ -50,6 +43,16 @@ matrix = rgbmatrix.RGBMatrix(
 
 # Associate matrix with displayio framebuffer (manual refresh to sync with crossfading)
 display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
+
+# 3. Import remaining libraries (which can be loaded in fragmented memory)
+import time
+import math
+import os
+import json
+import microcontroller
+import wifi
+import socketpool
+from adafruit_httpserver import Server, Request, Response
 
 # Configurable Parameters
 THEMES = [
@@ -462,7 +465,7 @@ if ssid and password:
         
         # Setup Server on native socketpool
         pool = socketpool.SocketPool(wifi.radio)
-        server = Server(pool, "/static")
+        server = Server(pool)
         
         @server.route("/")
         def index_route(request: Request):
@@ -527,14 +530,15 @@ if ssid and password:
                 
             return Response(request, json.dumps({"status": "ok"}), content_type="application/json")
             
-        server.start(str(wifi.radio.ipv4_address))
-        print("HTTP Server successfully started on port 80.")
+        # Start server listening on all interfaces ("0.0.0.0") to resolve routing table bugs
+        server.start(port=8080)
+        print("HTTP Server successfully started on port 8080.")
     except Exception as e:
         print("WiFi/Server setup failed:", e)
 else:
     print("WiFi: No SSID or password set in settings.toml")
 
-# 3. Create 128x64 bitmap for draw operations
+# 4. Create 128x64 bitmap for draw operations
 bitmap = displayio.Bitmap(128, 64, 256)
 palette = displayio.Palette(256)
 
@@ -738,16 +742,17 @@ def update_hardware_palette():
         )
 
 # Pre-calculate star coordinate sets (Landscape layout, 128x64 flag size)
+# Shifting canton to the left edge of the first panel (columns 64-114) for correct display
 stars_50_horizontal = []
 for r in range(1, 10):
     for c in range(1, 12):
         if (r % 2 == 1 and c % 2 == 1) or (r % 2 == 0 and c % 2 == 0):
-            stars_50_horizontal.append((int((c / 12.0) * 51.0), int((r / 10.0) * 34.0)))
+            stars_50_horizontal.append((int((c / 12.0) * 51.0) + 64, int((r / 10.0) * 34.0)))
 
 stars_13_horizontal = []
 for i in range(13):
     angle = (i * 2.0 * math.pi) / 13.0
-    star_x = int(math.cos(angle) * 16.83 + 25.5)
+    star_x = int(math.cos(angle) * 16.83 + 89.5)
     star_y = int(math.sin(angle) * 11.22 + 17.0)
     stars_13_horizontal.append((star_x, star_y))
 
@@ -772,6 +777,20 @@ stars_13_horizontal_set = set(stars_13_horizontal)
 stars_50_vertical_set = set(stars_50_vertical)
 stars_13_vertical_set = set(stars_13_vertical)
 
+def is_in_star(x, y, active_stars):
+    """Checks if a pixel coordinate is part of a 3x3 pixel detailed star shape (5-pixel cross)."""
+    if (x, y) in active_stars:
+        return True
+    if (x - 1, y) in active_stars:
+        return True
+    if (x + 1, y) in active_stars:
+        return True
+    if (x, y - 1) in active_stars:
+        return True
+    if (x, y + 1) in active_stars:
+        return True
+    return False
+
 def render_static_bitmap(layout_mode, vert_mode):
     """Draws the flag shapes on the 128x64 bitmap once."""
     if vert_mode == 1:
@@ -786,14 +805,14 @@ def render_static_bitmap(layout_mode, vert_mode):
                 in_canton = (y < 34 and x >= 77)
                 stripe_idx = (y * 13) // 64
             else:
-                # Standard flag layout: canton in the top left
-                in_canton = (x < 51 and y < 34)
+                # Standard flag layout: canton on the left of the single panel (columns 64-114)
+                in_canton = (x >= 64 and x < 115 and y < 34)
                 stripe_idx = (y * 13) // 64
                 
             stripe_base_offset = stripe_idx * 16
             
             if in_canton:
-                if (x, y) in active_stars:
+                if is_in_star(x, y, active_stars):
                     bitmap[x, y] = 224 + 15  # Index 224 + 15 = Star color
                 else:
                     bitmap[x, y] = 208 + 15  # Index 208 + 15 = Canton background color
