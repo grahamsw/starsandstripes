@@ -56,7 +56,6 @@ THEMES = [
     "thin_gold",
     "all_responders"
 ]
-CYCLE_INTERVAL = 10.0      # Cycle to next flag every 10 seconds
 TRANSITION_SPEED = 0.08    # Interpolation rate per frame (~1.2s crossfade)
 
 # Active State Variables
@@ -65,6 +64,8 @@ vertical_mode = 0          # 0 = horizontal (landscape), 1 = vertical (portrait)
 is_cycling = True          # Enable/disable theme cycling
 enabled_themes = THEMES.copy() # List of themes allowed in cycle loop
 active_theme = THEMES[0]
+cycle_interval = 10.0      # Cycle to next flag every X seconds
+brightness = 1.0           # LED matrix brightness (0.0 to 1.0)
 
 
 NVM_SIGNATURE = b"FLAGCONF:"
@@ -77,7 +78,9 @@ def save_config():
             "vertical_mode": vertical_mode,
             "is_cycling": is_cycling,
             "enabled_themes": enabled_themes,
-            "active_theme": active_theme
+            "active_theme": active_theme,
+            "cycle_interval": cycle_interval,
+            "brightness": brightness
         }
         config_str = json.dumps(config)
         config_bytes = config_str.encode("utf-8")
@@ -101,7 +104,7 @@ def save_config():
 
 def load_config():
     """Loads the config from microcontroller.nvm if it exists and matches signature."""
-    global star_layout, vertical_mode, is_cycling, enabled_themes, active_theme
+    global star_layout, vertical_mode, is_cycling, enabled_themes, active_theme, cycle_interval, brightness
     try:
         nvm = microcontroller.nvm
         sig_len = len(NVM_SIGNATURE)
@@ -133,12 +136,17 @@ def load_config():
         if "active_theme" in config:
             if config["active_theme"] in THEMES:
                 active_theme = config["active_theme"]
+        if "cycle_interval" in config:
+            cycle_interval = float(config["cycle_interval"])
+        if "brightness" in config:
+            brightness = float(config["brightness"])
         print("Loaded configuration from microcontroller NVM successfully.")
     except Exception as e:
         print("Failed to load config from NVM:", e)
 
 # Load saved configurations before starting WiFi
 load_config()
+display.brightness = brightness
 
 # 1. Connect to local WiFi using SPI co-processor (ESP32 AirLift)
 ip_address = "No WiFi"
@@ -332,7 +340,7 @@ if esp and esp.is_connected:
   </style>
 </head>
 <body>
-  <div class="card" style="display: flex; flex-direction: column;">
+  <div class="card" style="display: flex; flex-direction: column; gap: 15px;">
     <h1>🇺🇸 Flag Control</h1>
     <div class="status" id="status-text">Connecting...</div>
     
@@ -340,6 +348,24 @@ if esp and esp.is_connected:
       <button class="btn" id="btn-cycle" onclick="toggleCycle()">Theme Cycling: ON</button>
       <button class="btn btn-secondary" onclick="toggleStarLayout()">Toggle Star Layout</button>
       <button class="btn btn-secondary" onclick="toggleVerticalLayout()">Toggle Vertical Layout</button>
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; border-top: 1px solid #334155; padding-top: 15px;">
+      <div class="control-group">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
+          <span>Cycle Interval</span>
+          <span id="cycle-interval-val">--s</span>
+        </div>
+        <input type="range" min="1" max="60" step="1" id="cycle-interval-slider" oninput="handleIntervalInput(this.value)" onchange="updateCycleInterval(this.value)" style="width: 100%; margin-top: 5px;" />
+      </div>
+
+      <div class="control-group">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
+          <span>LED Brightness</span>
+          <span id="brightness-val">--%</span>
+        </div>
+        <input type="range" min="10" max="100" step="5" id="brightness-slider" oninput="handleBrightnessInput(this.value)" onchange="updateBrightness(this.value)" style="width: 100%; margin-top: 5px;" />
+      </div>
     </div>
   </div>
   
@@ -355,6 +381,27 @@ if esp and esp.is_connected:
       return q;
     }
     
+    function handleIntervalInput(val) {
+      document.getElementById('cycle-interval-val').innerText = val + 's';
+    }
+    
+    function handleBrightnessInput(val) {
+      document.getElementById('brightness-val').innerText = val + '%';
+    }
+
+    async function updateCycleInterval(val) {
+      handleIntervalInput(val);
+      await fetch('/api/control?cycle_interval=' + val);
+      loadState();
+    }
+    
+    async function updateBrightness(val) {
+      handleBrightnessInput(val);
+      let b = val / 100.0;
+      await fetch('/api/control?brightness=' + b);
+      loadState();
+    }
+
     async function loadState() {
       try {
         let res = await fetch('/api/state');
@@ -363,6 +410,13 @@ if esp and esp.is_connected:
         document.getElementById('status-text').innerText = 'Active: ' + state.active_theme.replace('_', ' ');
         document.getElementById('btn-cycle').innerText = 'Theme Cycling: ' + (state.cycling ? 'ON' : 'OFF');
         document.getElementById('btn-cycle').className = state.cycling ? 'btn' : 'btn btn-secondary';
+        
+        document.getElementById('cycle-interval-slider').value = state.cycle_interval;
+        document.getElementById('cycle-interval-val').innerText = state.cycle_interval + 's';
+        
+        let bPercent = Math.round(state.brightness * 100);
+        document.getElementById('brightness-slider').value = bPercent;
+        document.getElementById('brightness-val').innerText = bPercent + '%';
         
         let html = '';
         state.themes.forEach(theme => {
@@ -453,13 +507,15 @@ if esp and esp.is_connected:
                 "star_layout": star_layout,
                 "vertical_mode": vertical_mode,
                 "themes": THEMES,
-                "enabled_themes": enabled_themes
+                "enabled_themes": enabled_themes,
+                "cycle_interval": cycle_interval,
+                "brightness": brightness
             }
             return ("200 OK", [("Content-Type", "application/json")], [json.dumps(data)])
 
         @web_app.route("/api/control")
         def control_route(request):
-            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes
+            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes, cycle_interval, brightness
             params = request.query_params
             
             needs_save = False
@@ -488,6 +544,15 @@ if esp and esp.is_connected:
                     enabled_themes = [t for t in val.split(",") if t in THEMES]
                 else:
                     enabled_themes = []
+                needs_save = True
+                
+            if "cycle_interval" in params:
+                cycle_interval = float(params["cycle_interval"])
+                needs_save = True
+                
+            if "brightness" in params:
+                brightness = float(params["brightness"])
+                display.brightness = brightness
                 needs_save = True
                 
             if needs_save:
@@ -825,7 +890,7 @@ while True:
         render_static_bitmap(star_layout, vertical_mode)
         
     # 4. Cycle theme timer (only if is_cycling is enabled)
-    if is_cycling and (now - last_cycle_time > CYCLE_INTERVAL):
+    if is_cycling and (now - last_cycle_time > cycle_interval):
         last_cycle_time = now
         if enabled_themes:
             try:
