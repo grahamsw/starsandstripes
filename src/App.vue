@@ -110,24 +110,59 @@
               :class="{ 'active': activeThemeKey === key }"
               @click="selectTheme(key, true)"
             >
-              <div class="theme-colors">
-                <span class="color-dot" :style="{ backgroundColor: getThemePreviewColor(theme, 0) }"></span>
-                <span class="color-dot" :style="{ backgroundColor: getThemePreviewColor(theme, 1) }"></span>
-                <span class="color-dot" :style="{ backgroundColor: getThemePreviewColor(theme, 2) }"></span>
+              <div class="theme-card-left">
+                <input 
+                  type="checkbox" 
+                  :value="key" 
+                  v-model="enabledThemes" 
+                  @click.stop
+                  class="theme-checkbox" 
+                  title="Include in Auto-Cycle"
+                />
+                <div v-if="theme.rainbowMode" class="flag-thumbnail rainbow-gradient">
+                  <div class="thumbnail-canton" style="background-color: #3C3B6E;">
+                    <span class="thumbnail-star-dot" style="background-color: #ffffff;"></span>
+                  </div>
+                </div>
+                <div v-else class="flag-thumbnail">
+                  <div class="thumbnail-stripes">
+                    <div v-for="(color, idx) in theme.stripeColors" :key="idx" class="thumbnail-stripe" :style="{ backgroundColor: color }"></div>
+                  </div>
+                  <div class="thumbnail-canton" :style="{ backgroundColor: theme.cantonColor }">
+                    <span class="thumbnail-star-dot" :style="{ backgroundColor: theme.starColor }"></span>
+                  </div>
+                </div>
               </div>
               <span class="theme-name">{{ theme.name }}</span>
             </button>
           </div>
           
-          <!-- Auto Cycle Toggle -->
-          <button 
-            class="cycle-btn" 
-            :class="{ 'cycling': isCycling }" 
-            @click="toggleCycle"
-          >
-            <span class="cycle-indicator"></span>
-            {{ isCycling ? 'Auto-Cycling Active' : 'Enable Auto-Cycle' }}
-          </button>
+          <!-- Auto Cycle Controls -->
+          <div class="cycle-controls">
+            <button 
+              class="cycle-btn" 
+              :class="{ 'cycling': isCycling }" 
+              @click="toggleCycle"
+            >
+              <span class="cycle-indicator"></span>
+              {{ isCycling ? 'Auto-Cycling Active' : 'Enable Auto-Cycle' }}
+            </button>
+
+            <div class="control-group mt-2">
+              <div class="control-label">
+                <span>Cycle Duration</span>
+                <span class="control-val">{{ cycleSpeed.toFixed(1) }}s</span>
+              </div>
+              <input 
+                type="range" 
+                min="1.0" 
+                max="15.0" 
+                step="0.5" 
+                v-model.number="cycleSpeed" 
+                class="cycle-speed-slider"
+              />
+            </div>
+          </div>
         </section>
 
         <!-- Custom Color Customizer -->
@@ -235,7 +270,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import FlagCanvas from './components/FlagCanvas.vue';
 import { THEMES } from './themes.js';
 
@@ -258,6 +293,8 @@ const controls = reactive({
 
 const isSidebarCollapsed = ref(false);
 const isCycling = ref(false);
+const enabledThemes = ref(Object.keys(THEMES));
+const cycleSpeed = ref(4.8);
 let cycleInterval = null;
 
 // LED Matrix Emulation State
@@ -360,14 +397,19 @@ const onCustomColorChange = () => {
 // Cycle through themes automatically
 const startCycling = () => {
   isCycling.value = true;
-  let keys = Object.keys(THEMES);
-  let index = keys.indexOf(activeThemeKey.value);
-  if (index === -1) index = 0;
   
   cycleInterval = setInterval(() => {
-    index = (index + 1) % keys.length;
+    let keys = Object.keys(THEMES).filter(key => enabledThemes.value.includes(key));
+    if (keys.length === 0) keys = Object.keys(THEMES); // Fallback if none checked
+    
+    let index = keys.indexOf(activeThemeKey.value);
+    if (index === -1) {
+      index = 0;
+    } else {
+      index = (index + 1) % keys.length;
+    }
     selectTheme(keys[index], false);
-  }, 4800); // 4.8 seconds per theme
+  }, cycleSpeed.value * 1000);
 };
 
 const stopCycling = () => {
@@ -385,6 +427,13 @@ const toggleCycle = () => {
     startCycling();
   }
 };
+
+watch(cycleSpeed, () => {
+  if (isCycling.value) {
+    stopCycling();
+    startCycling();
+  }
+});
 
 let startX = 0;
 let startY = 0;
@@ -618,13 +667,16 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-md);
-  padding: 10px;
+  padding: 8px 10px;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 8px;
   transition: var(--transition-smooth);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .theme-card:hover {
@@ -638,26 +690,91 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
 }
 
-.theme-colors {
+.theme-card-left {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.color-dot {
+.theme-checkbox {
+  accent-color: var(--accent);
+  cursor: pointer;
   width: 14px;
   height: 14px;
+  margin: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.theme-checkbox:hover {
+  opacity: 1;
+}
+
+.flag-thumbnail {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 2px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.thumbnail-stripes {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.thumbnail-stripe {
+  flex: 1;
+}
+
+.thumbnail-canton {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 53.8%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thumbnail-star-dot {
+  width: 2px;
+  height: 2px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.rainbow-gradient {
+  background: linear-gradient(to bottom, #782080, #0000FF, #008000, #FFFF00, #FFA500, #FF0000);
 }
 
 .theme-name {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 500;
   color: var(--text-secondary);
+  text-align: left;
+  line-height: 1.2;
 }
 
 .theme-card.active .theme-name {
   color: var(--text-primary);
+}
+
+.cycle-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cycle-speed-slider {
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 /* Cycle Button */

@@ -146,6 +146,14 @@ except Exception as e:
 wsgi_server = None
 if esp and esp.is_connected:
     try:
+        # Inject our custom socket module into sys.modules to satisfy the WSGI library
+        # because the board's frozen adafruit_esp32spi lacks adafruit_esp32spi_socket.
+        import sys
+        import adafruit_esp32spi
+        import adafruit_esp32spi_socket
+        adafruit_esp32spi.adafruit_esp32spi_socket = adafruit_esp32spi_socket
+        sys.modules['adafruit_esp32spi.adafruit_esp32spi_socket'] = adafruit_esp32spi_socket
+        
         import adafruit_wsgi.esp32spi_wsgiserver as server
         from adafruit_wsgi.wsgi_app import WSGIApp
         import adafruit_esp32spi.adafruit_esp32spi_socket as socket
@@ -397,15 +405,7 @@ if esp and esp.is_connected:
 </html>
 """
 
-        def parse_query_string(qs):
-            params = {}
-            if not qs:
-                return params
-            for item in qs.split("&"):
-                if "=" in item:
-                    k, v = item.split("=", 1)
-                    params[k] = v
-            return params
+
 
         @web_app.route("/")
         def index_route(request):
@@ -426,7 +426,7 @@ if esp and esp.is_connected:
         @web_app.route("/api/control")
         def control_route(request):
             global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes
-            params = parse_query_string(request.query_string)
+            params = request.query_params
             
             needs_save = False
             
