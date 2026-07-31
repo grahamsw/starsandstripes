@@ -336,7 +336,7 @@ INDEX_HTML = """<!DOCTYPE html>
     
     <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; border-top: 1px solid #334155; padding-top: 15px;">
       <div class="control-group">
-        <div style="display: flex; justify-space-between: space-between; font-size: 14px; color: #94a3b8; font-weight: 500; justify-content: space-between;">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
           <span>Cycle Interval</span>
           <span id="cycle-interval-val">--s</span>
         </div>
@@ -344,7 +344,7 @@ INDEX_HTML = """<!DOCTYPE html>
       </div>
 
       <div class="control-group">
-        <div style="display: flex; justify-space-between: space-between; font-size: 14px; color: #94a3b8; font-weight: 500; justify-content: space-between;">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
           <span>LED Brightness</span>
           <span id="brightness-val">--%</span>
         </div>
@@ -357,9 +357,36 @@ INDEX_HTML = """<!DOCTYPE html>
   <div class="card" style="display: flex; flex-direction: column; gap: 15px;">
     <h2>🖼️ Custom Image Display</h2>
     <div style="font-size: 13px; color: #94a3b8; line-height: 1.4;">
-      Select any image from your device. It will be automatically scaled to 64x64, color-quantized, and loaded onto the display panel.
+      Select any image from your device. It will be center-cropped (no distortion) and optimized.
     </div>
-    <div class="btn-container">
+    
+    <div style="display: flex; flex-direction: column; gap: 12px; border-top: 1px solid #334155; padding-top: 10px;">
+      <div class="control-group">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
+          <span>Image Brightness</span>
+          <span id="img-brightness-val">70%</span>
+        </div>
+        <input type="range" min="10" max="100" step="5" id="img-brightness" value="70" oninput="document.getElementById('img-brightness-val').innerText = this.value + '%'" onchange="processAndUploadImage()" style="width: 100%; margin-top: 5px;" />
+      </div>
+
+      <div class="control-group">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
+          <span>Image Contrast</span>
+          <span id="img-contrast-val">-15</span>
+        </div>
+        <input type="range" min="-50" max="50" step="5" id="img-contrast" value="-15" oninput="document.getElementById('img-contrast-val').innerText = this.value" onchange="processAndUploadImage()" style="width: 100%; margin-top: 5px;" />
+      </div>
+
+      <div class="control-group">
+        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
+          <span>Gamma Correction</span>
+          <span id="img-gamma-val">2.2</span>
+        </div>
+        <input type="range" min="1.0" max="3.0" step="0.1" id="img-gamma" value="2.2" oninput="document.getElementById('img-gamma-val').innerText = this.value" onchange="processAndUploadImage()" style="width: 100%; margin-top: 5px;" />
+      </div>
+    </div>
+    
+    <div class="btn-container" style="margin-top: 10px;">
       <input type="file" id="image-input" accept="image/*" style="display:none;" onchange="handleImageUpload(this.files[0])" />
       <button class="btn btn-accent" onclick="document.getElementById('image-input').click()">Upload & Display Image</button>
     </div>
@@ -373,6 +400,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
   <script>
     let state = {};
+    let uploadedFile = null;
     
     function handleIntervalInput(val) {
       document.getElementById('cycle-interval-val').innerText = val + 's';
@@ -486,36 +514,71 @@ INDEX_HTML = """<!DOCTYPE html>
       loadState();
     }
 
-    async function handleImageUpload(file) {
+    function handleImageUpload(file) {
       if (!file) return;
+      uploadedFile = file;
+      processAndUploadImage();
+    }
+
+    async function processAndUploadImage() {
+      if (!uploadedFile) return;
       const statusText = document.getElementById('upload-status');
-      statusText.innerText = "Resizing & Quantizing...";
+      statusText.innerText = "Processing image...";
+      
+      const gamma = parseFloat(document.getElementById('img-gamma').value);
+      const brightness = parseFloat(document.getElementById('img-brightness').value) / 100.0;
+      const contrast = parseFloat(document.getElementById('img-contrast').value); // -50 to 50
       
       const img = new Image();
-      img.src = URL.createObjectURL(file);
+      img.src = URL.createObjectURL(uploadedFile);
       img.onload = async () => {
         // Create 64x64 canvas
         const canvas = document.createElement('canvas');
         canvas.width = 64;
         canvas.height = 64;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, 64, 64);
+        
+        // Center crop to preserve aspect ratio
+        const minDim = Math.min(img.width, img.height);
+        const sx = (img.width - minDim) / 2;
+        const sy = (img.height - minDim) / 2;
+        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 64, 64);
         
         // Extract pixel data
         const imgData = ctx.getImageData(0, 0, 64, 64);
         const pixels = imgData.data;
         
+        // Calculate contrast factor (standard contrast adjustment factor)
+        // Adjust contrast input (-50 to 50) to factor
+        const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+        
         // Quantize to RGB332 (1 byte per pixel)
         const buffer = new Uint8Array(4096);
         for (let i = 0; i < 4096; i++) {
-          const r = pixels[i * 4];
-          const g = pixels[i * 4 + 1];
-          const b = pixels[i * 4 + 2];
+          let r = pixels[i * 4];
+          let g = pixels[i * 4 + 1];
+          let b = pixels[i * 4 + 2];
+          
+          // 1. Apply Contrast Adjustment
+          r = factor * (r - 128) + 128;
+          g = factor * (g - 128) + 128;
+          b = factor * (b - 128) + 128;
+          
+          // Clamp values to 0..255
+          r = Math.max(0, Math.min(255, r));
+          g = Math.max(0, Math.min(255, g));
+          b = Math.max(0, Math.min(255, b));
+          
+          // 2. Apply Brightness and Gamma correction
+          // Gamma correction compresses highlights and saves mid-tones on bright LEDs
+          const r_norm = Math.pow((r / 255.0) * brightness, gamma);
+          const g_norm = Math.pow((g / 255.0) * brightness, gamma);
+          const b_norm = Math.pow((b / 255.0) * brightness, gamma);
           
           // Scale to ranges: r (0-7), g (0-7), b (0-3)
-          const r3 = Math.round(r * 7 / 255);
-          const g3 = Math.round(g * 7 / 255);
-          const b2 = Math.round(b * 3 / 255);
+          const r3 = Math.round(r_norm * 7);
+          const g3 = Math.round(g_norm * 7);
+          const b2 = Math.round(b_norm * 3);
           
           buffer[i] = (r3 << 5) | (g3 << 2) | b2;
         }
