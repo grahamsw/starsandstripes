@@ -12,6 +12,7 @@ import time
 import math
 import os
 import json
+import microcontroller
 from digitalio import DigitalInOut
 
 # Release any active displays to free up pins
@@ -65,8 +66,11 @@ is_cycling = True          # Enable/disable theme cycling
 enabled_themes = THEMES.copy() # List of themes allowed in cycle loop
 active_theme = THEMES[0]
 
+
+NVM_SIGNATURE = b"FLAGCONF:"
+
 def save_config():
-    """Saves the current config to a local JSON file on flash memory."""
+    """Saves the current config to the board's microcontroller.nvm."""
     try:
         config = {
             "star_layout": star_layout,
@@ -75,33 +79,63 @@ def save_config():
             "enabled_themes": enabled_themes,
             "active_theme": active_theme
         }
-        with open("/config.json", "w") as f:
-            json.dump(config, f)
-        print("Configuration saved successfully to flash.")
+        config_str = json.dumps(config)
+        config_bytes = config_str.encode("utf-8")
+        
+        # Construct payload: signature + length (2 bytes) + data
+        payload = NVM_SIGNATURE + len(config_bytes).to_bytes(2, "big") + config_bytes
+        
+        if len(payload) > len(microcontroller.nvm):
+            print("Config payload exceeds NVM capacity!")
+            return
+            
+        # Write to NVM
+        microcontroller.nvm[0:len(payload)] = payload
+        # Add a null terminator in NVM if there is space
+        if len(payload) < len(microcontroller.nvm):
+            microcontroller.nvm[len(payload)] = 0
+            
+        print("Configuration saved successfully to microcontroller NVM.")
     except Exception as e:
-        # Note: Flash is write-protected if board is currently connected to a PC as USB storage
-        print("Could not save config to flash (likely read-only USB mass storage active):", e)
+        print("Could not save config to NVM:", e)
 
 def load_config():
-    """Loads the config from local JSON file if it exists."""
+    """Loads the config from microcontroller.nvm if it exists and matches signature."""
     global star_layout, vertical_mode, is_cycling, enabled_themes, active_theme
     try:
-        with open("/config.json", "r") as f:
-            config = json.load(f)
-            if "star_layout" in config:
-                star_layout = config["star_layout"]
-            if "vertical_mode" in config:
-                vertical_mode = config["vertical_mode"]
-            if "is_cycling" in config:
-                is_cycling = config["is_cycling"]
-            if "enabled_themes" in config:
-                enabled_themes = [t for t in config["enabled_themes"] if t in THEMES]
-            if "active_theme" in config:
-                if config["active_theme"] in THEMES:
-                    active_theme = config["active_theme"]
-        print("Loaded configuration from flash successfully.")
+        nvm = microcontroller.nvm
+        sig_len = len(NVM_SIGNATURE)
+        # Check signature
+        if nvm[0:sig_len] != NVM_SIGNATURE:
+            print("No saved config signature found in NVM. Using defaults.")
+            return
+            
+        # Read payload length (2 bytes)
+        payload_len = int.from_bytes(nvm[sig_len:sig_len+2], "big")
+        if payload_len <= 0 or payload_len > (len(nvm) - sig_len - 2):
+            print("Invalid config length in NVM. Using defaults.")
+            return
+            
+        # Read JSON string
+        data_start = sig_len + 2
+        data_end = data_start + payload_len
+        config_str = nvm[data_start:data_end].decode("utf-8")
+        
+        config = json.loads(config_str)
+        if "star_layout" in config:
+            star_layout = config["star_layout"]
+        if "vertical_mode" in config:
+            vertical_mode = config["vertical_mode"]
+        if "is_cycling" in config:
+            is_cycling = config["is_cycling"]
+        if "enabled_themes" in config:
+            enabled_themes = [t for t in config["enabled_themes"] if t in THEMES]
+        if "active_theme" in config:
+            if config["active_theme"] in THEMES:
+                active_theme = config["active_theme"]
+        print("Loaded configuration from microcontroller NVM successfully.")
     except Exception as e:
-        print("No saved config found or failed to load. Using defaults.")
+        print("Failed to load config from NVM:", e)
 
 # Load saved configurations before starting WiFi
 load_config()
