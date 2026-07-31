@@ -52,7 +52,7 @@ import json
 import microcontroller
 import wifi
 import socketpool
-from adafruit_httpserver import Server, Request, Response
+from adafruit_httpserver import Server, Request, Response, GET, POST
 
 # Configurable Parameters
 THEMES = [
@@ -81,8 +81,25 @@ enabled_themes = THEMES.copy() # List of themes allowed in cycle loop
 active_theme = THEMES[0]
 cycle_interval = 10.0      # Cycle to next flag every X seconds
 brightness = 1.0           # LED matrix brightness (0.0 to 1.0) via software color scaling
+active_mode = "flag"       # "flag" or "image"
+image_buffer = bytearray(4096)
 
 NVM_SIGNATURE = b"FLAGCONF:"
+
+# Pre-calculate RGB332 palette (256 colors: 3-bit Red, 3-bit Green, 2-bit Blue)
+rgb332_palette = []
+for r_val in range(8):
+    for g_val in range(8):
+        for b_val in range(4):
+            rv = (r_val * 255) // 7
+            gv = (g_val * 255) // 7
+            bv = (b_val * 255) // 3
+            rgb332_palette.append((rv, gv, bv))
+
+def load_rgb332_palette():
+    """Loads the fixed 8-bit RGB332 palette into the hardware palette."""
+    for idx in range(256):
+        palette[idx] = rgb332_palette[idx]
 
 def save_config():
     """Saves the current config to the board's microcontroller.nvm."""
@@ -249,6 +266,12 @@ INDEX_HTML = """<!DOCTYPE html>
     .btn-secondary:active {
       background: rgba(51, 65, 85, 0.6);
     }
+    .btn-accent {
+      background: #10b981;
+    }
+    .btn-accent:active {
+      background: #059669;
+    }
     .theme-row {
       display: flex;
       align-items: center;
@@ -308,11 +331,12 @@ INDEX_HTML = """<!DOCTYPE html>
       <button class="btn" id="btn-cycle" onclick="toggleCycle()">Theme Cycling: ON</button>
       <button class="btn btn-secondary" onclick="toggleStarLayout()">Toggle Star Layout</button>
       <button class="btn btn-secondary" onclick="toggleVerticalLayout()">Toggle Vertical Layout</button>
+      <button class="btn btn-secondary" id="btn-restore-flag" onclick="restoreFlagMode()" style="display:none; border: 1px solid #10b981; color: #10b981;">Restore Flag Animation</button>
     </div>
     
     <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; border-top: 1px solid #334155; padding-top: 15px;">
       <div class="control-group">
-        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
+        <div style="display: flex; justify-space-between: space-between; font-size: 14px; color: #94a3b8; font-weight: 500; justify-content: space-between;">
           <span>Cycle Interval</span>
           <span id="cycle-interval-val">--s</span>
         </div>
@@ -320,7 +344,7 @@ INDEX_HTML = """<!DOCTYPE html>
       </div>
 
       <div class="control-group">
-        <div style="display: flex; justify-content: space-between; font-size: 14px; color: #94a3b8; font-weight: 500;">
+        <div style="display: flex; justify-space-between: space-between; font-size: 14px; color: #94a3b8; font-weight: 500; justify-content: space-between;">
           <span>LED Brightness</span>
           <span id="brightness-val">--%</span>
         </div>
@@ -328,8 +352,21 @@ INDEX_HTML = """<!DOCTYPE html>
       </div>
     </div>
   </div>
+
+  <!-- Custom Image Upload Section -->
+  <div class="card" style="display: flex; flex-direction: column; gap: 15px;">
+    <h2>🖼️ Custom Image Display</h2>
+    <div style="font-size: 13px; color: #94a3b8; line-height: 1.4;">
+      Select any image from your device. It will be automatically scaled to 64x64, color-quantized, and loaded onto the display panel.
+    </div>
+    <div class="btn-container">
+      <input type="file" id="image-input" accept="image/*" style="display:none;" onchange="handleImageUpload(this.files[0])" />
+      <button class="btn btn-accent" onclick="document.getElementById('image-input').click()">Upload & Display Image</button>
+    </div>
+    <div id="upload-status" style="font-size: 13px; color: #10b981; text-align: center; font-weight: 600;"></div>
+  </div>
   
-  <div class="card">
+  <div class="card" id="themes-card">
     <h2>Cycle List & Themes</h2>
     <div id="themes-list"></div>
   </div>
@@ -358,12 +395,30 @@ INDEX_HTML = """<!DOCTYPE html>
       loadState();
     }
 
+    async function restoreFlagMode() {
+      await fetch('/api/control?mode=flag');
+      loadState();
+    }
+
     async function loadState() {
       try {
         let res = await fetch('/api/state');
         state = await res.json();
         
-        document.getElementById('status-text').innerText = 'Active: ' + state.active_theme.replace('_', ' ');
+        const isImageMode = state.mode === 'image';
+        
+        if (isImageMode) {
+          document.getElementById('status-text').innerText = 'Active: Rendering Image';
+          document.getElementById('btn-restore-flag').style.display = 'block';
+          document.getElementById('themes-card').style.opacity = '0.5';
+          document.getElementById('btn-cycle').disabled = true;
+        } else {
+          document.getElementById('status-text').innerText = 'Active: ' + state.active_theme.replace('_', ' ');
+          document.getElementById('btn-restore-flag').style.display = 'none';
+          document.getElementById('themes-card').style.opacity = '1.0';
+          document.getElementById('btn-cycle').disabled = false;
+        }
+        
         document.getElementById('btn-cycle').innerText = 'Theme Cycling: ' + (state.cycling ? 'ON' : 'OFF');
         document.getElementById('btn-cycle').className = state.cycling ? 'btn' : 'btn btn-secondary';
         
@@ -377,7 +432,7 @@ INDEX_HTML = """<!DOCTYPE html>
         let html = '';
         state.themes.forEach(theme => {
           let checked = state.enabled_themes.includes(theme) ? 'checked' : '';
-          let isActive = state.active_theme === theme;
+          let isActive = state.active_theme === theme && !isImageMode;
           let labelText = theme.replace('_', ' ');
           
           html += `<div class="theme-row">
@@ -386,7 +441,7 @@ INDEX_HTML = """<!DOCTYPE html>
               ${isActive ? '<span class="theme-active-tag">CURRENTLY RENDERING</span>' : ''}
             </div>
             <label class="switch">
-              <input type="checkbox" ${checked} onchange="toggleTheme('${theme}', this.checked)">
+              <input type="checkbox" ${checked} onchange="toggleTheme('${theme}', this.checked)" ${isImageMode ? 'disabled' : ''}>
               <span class="slider"></span>
             </label>
           </div>`;
@@ -415,6 +470,7 @@ INDEX_HTML = """<!DOCTYPE html>
     }
     
     async function selectTheme(theme) {
+      if (state.mode === 'image') return;
       await fetch('/api/control?theme=' + theme);
       loadState();
     }
@@ -429,6 +485,65 @@ INDEX_HTML = """<!DOCTYPE html>
       await fetch('/api/control?enabled_themes=' + list.join(','));
       loadState();
     }
+
+    async function handleImageUpload(file) {
+      if (!file) return;
+      const statusText = document.getElementById('upload-status');
+      statusText.innerText = "Resizing & Quantizing...";
+      
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = async () => {
+        // Create 64x64 canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, 64, 64);
+        
+        // Extract pixel data
+        const imgData = ctx.getImageData(0, 0, 64, 64);
+        const pixels = imgData.data;
+        
+        // Quantize to RGB332 (1 byte per pixel)
+        const buffer = new Uint8Array(4096);
+        for (let i = 0; i < 4096; i++) {
+          const r = pixels[i * 4];
+          const g = pixels[i * 4 + 1];
+          const b = pixels[i * 4 + 2];
+          
+          // Scale to ranges: r (0-7), g (0-7), b (0-3)
+          const r3 = Math.round(r * 7 / 255);
+          const g3 = Math.round(g * 7 / 255);
+          const b2 = Math.round(b * 3 / 255);
+          
+          buffer[i] = (r3 << 5) | (g3 << 2) | b2;
+        }
+        
+        // Upload in 4 chunks of 1024 bytes (to respect tiny request buffers)
+        const chunkSize = 1024;
+        try {
+          for (let offset = 0; offset < 4096; offset += chunkSize) {
+            statusText.innerText = `Uploading chunk ${offset / chunkSize + 1}/4...`;
+            const chunk = buffer.slice(offset, offset + chunkSize);
+            
+            let res = await fetch(`/api/upload_chunk?offset=${offset}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/octet-stream' },
+              body: chunk
+            });
+            if (!res.ok) throw new Error("Chunk upload failed");
+          }
+          statusText.innerText = "Displaying Image!";
+          setTimeout(() => { statusText.innerText = ""; }, 3000);
+          loadState();
+        } catch (e) {
+          statusText.innerText = "Upload failed: network error";
+          statusText.style.color = "#ef4444";
+          setTimeout(() => { statusText.innerText = ""; statusText.style.color = "#10b981"; }, 4000);
+        }
+      };
+    }
     
     // Poll for status updates
     setInterval(async () => {
@@ -437,9 +552,18 @@ INDEX_HTML = """<!DOCTYPE html>
         let data = await res.json();
         state.active_theme = data.active_theme;
         state.cycling = data.cycling;
-        document.getElementById('status-text').innerText = 'Active: ' + state.active_theme.replace('_', ' ');
-        document.getElementById('btn-cycle').innerText = 'Theme Cycling: ' + (state.cycling ? 'ON' : 'OFF');
-        document.getElementById('btn-cycle').className = state.cycling ? 'btn' : 'btn btn-secondary';
+        state.mode = data.mode;
+        
+        const isImageMode = state.mode === 'image';
+        if (isImageMode) {
+          document.getElementById('status-text').innerText = 'Active: Rendering Image';
+          document.getElementById('btn-restore-flag').style.display = 'block';
+          document.getElementById('btn-cycle').disabled = true;
+        } else {
+          document.getElementById('status-text').innerText = 'Active: ' + state.active_theme.replace('_', ' ');
+          document.getElementById('btn-restore-flag').style.display = 'none';
+          document.getElementById('btn-cycle').disabled = false;
+        }
       } catch (e) {}
     }, 3000);
     
@@ -481,13 +605,14 @@ if ssid and password:
                 "themes": THEMES,
                 "enabled_themes": enabled_themes,
                 "cycle_interval": cycle_interval,
-                "brightness": brightness
+                "brightness": brightness,
+                "mode": active_mode
             }
             return Response(request, json.dumps(data), content_type="application/json")
             
         @server.route("/api/control")
         def control_route(request: Request):
-            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes, cycle_interval, brightness
+            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes, cycle_interval, brightness, active_mode
             params = request.query_params
             needs_save = False
             
@@ -507,6 +632,19 @@ if ssid and password:
                 if params["theme"] in THEMES:
                     active_theme = params["theme"]
                     is_cycling = False # Stop cycling when theme manually forced
+                    active_mode = "flag"
+                    # Restore flag coordinates and color palettes
+                    render_static_bitmap(star_layout, vertical_mode)
+                    update_hardware_palette()
+                    needs_save = True
+                    
+            if "mode" in params:
+                val = params["mode"]
+                if val == "flag":
+                    active_mode = "flag"
+                    is_cycling = True
+                    render_static_bitmap(star_layout, vertical_mode)
+                    update_hardware_palette()
                     needs_save = True
                     
             if "enabled_themes" in params:
@@ -529,8 +667,36 @@ if ssid and password:
                 save_config()
                 
             return Response(request, json.dumps({"status": "ok"}), content_type="application/json")
+
+        @server.route("/api/upload_chunk", methods=[POST])
+        def upload_chunk_route(request: Request):
+            global is_cycling, active_mode
+            params = request.query_params
+            offset = int(params.get("offset", 0))
+            chunk_data = request.body
             
-        # Start server listening on all interfaces ("0.0.0.0") to resolve routing table bugs
+            # Write chunk directly to our static buffer
+            image_buffer[offset:offset+len(chunk_data)] = chunk_data
+            
+            # If all 4 chunks are fully received (reaches 4096 bytes)
+            if offset + len(chunk_data) == 4096:
+                is_cycling = False
+                active_mode = "image"
+                
+                # 1. Switch the display to the 256-color RGB332 palette
+                load_rgb332_palette()
+                
+                # 2. Draw pixels directly to the right-hand panel (columns 64 to 127)
+                for y in range(64):
+                    for x in range(64):
+                        bitmap[x + 64, y] = image_buffer[y * 64 + x]
+                
+                # 3. Push frame immediately to the screen
+                display.refresh()
+                
+            return Response(request, json.dumps({"status": "ok"}), content_type="application/json")
+            
+        # Start server listening on all interfaces ("0.0.0.0") on port 8080
         server.start(port=8080)
         print("HTTP Server successfully started on port 8080.")
     except Exception as e:
@@ -846,6 +1012,11 @@ while True:
             server.poll()
         except Exception as e:
             print("HTTP Server poll error:", e)
+            
+    # If rendering an image, skip animation calculations to save CPU cycle overhead
+    if active_mode == "image":
+        time.sleep(0.016)
+        continue
             
     # 2. Check layout or orientation change
     if (star_layout != last_star_layout) or (vertical_mode != last_vertical_mode):
