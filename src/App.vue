@@ -100,7 +100,14 @@
 
         <!-- Color Themes Section -->
         <section class="section">
-          <h2 class="section-title">Color Themes</h2>
+          <div class="theme-selection-header">
+            <h2 class="section-title">Color Themes</h2>
+            <div class="bulk-actions">
+              <button type="button" class="text-btn" @click="selectAllThemes">Select All</button>
+              <span class="divider">|</span>
+              <button type="button" class="text-btn" @click="selectNoThemes">Clear All</button>
+            </div>
+          </div>
           
           <div class="theme-grid">
             <button 
@@ -435,6 +442,14 @@ watch(cycleSpeed, () => {
   }
 });
 
+const selectAllThemes = () => {
+  enabledThemes.value = Object.keys(THEMES);
+};
+
+const selectNoThemes = () => {
+  enabledThemes.value = [];
+};
+
 let startX = 0;
 let startY = 0;
 
@@ -764,6 +779,44 @@ onBeforeUnmount(() => {
 
 .theme-card.active .theme-name {
   color: var(--text-primary);
+}
+
+.theme-selection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: all 0.15s;
+  letter-spacing: 0.02em;
+}
+
+.text-btn:hover {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--text-primary);
+}
+
+.divider {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  opacity: 0.4;
 }
 
 .cycle-controls {
