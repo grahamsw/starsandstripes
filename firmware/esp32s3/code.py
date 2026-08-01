@@ -33,7 +33,7 @@ print("Initializing RGBMatrix (128x64, 1/32 scan)...")
 matrix = rgbmatrix.RGBMatrix(
     width=128,
     height=64,
-    bit_depth=4,  # 4-bit color depth (4,096 colors total) doubles the refresh rate to eliminate flickering
+    bit_depth=2,  # 2-bit color depth (64 colors total) solves all signal noise and screen flickering
     rgb_pins=[R1, G1, B1, R2, G2, B2],
     addr_pins=[A, B, C, D, E],
     clock_pin=CLK,
