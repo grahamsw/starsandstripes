@@ -63,7 +63,6 @@ THEMES = [
     "bisexual",
     "lesbian",
     "nonbinary",
-    "rainbow_wave",
     "thin_blue",
     "thin_red",
     "first_responders",
@@ -71,7 +70,6 @@ THEMES = [
     "thin_gold",
     "all_responders"
 ]
-TRANSITION_SPEED = 0.08    # Interpolation rate per frame (~1.2s crossfade)
 
 # Active State Variables
 star_layout = 0            # 0 = 50-star grid, 1 = 13-star circle (Betsy Ross)
@@ -1262,13 +1260,13 @@ while True:
     # Fetch theme colors
     target_stripes, target_canton, target_star = get_theme_colors(active_theme, t)
     
-    # 4. Lerp active colors towards target
+    # 4. Abrupt transitions: set current colors directly to target
     for i in range(13):
         for c in range(3):
-            current_stripes[i][c] += (target_stripes[i][c] - current_stripes[i][c]) * TRANSITION_SPEED
+            current_stripes[i][c] = target_stripes[i][c]
     for c in range(3):
-        current_canton[c] += (target_canton[c] - current_canton[c]) * TRANSITION_SPEED
-        current_star[c] += (target_star[c] - current_star[c]) * TRANSITION_SPEED
+        current_canton[c] = target_canton[c]
+        current_star[c] = target_star[c]
         
     update_hardware_palette()
     display.refresh()
