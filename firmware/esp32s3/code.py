@@ -81,6 +81,10 @@ cycle_interval = 10.0      # Cycle to next flag every X seconds
 brightness = 1.0           # LED matrix brightness (0.0 to 1.0) via software color scaling
 active_mode = "flag"       # "flag" or "image"
 image_buffer = bytearray(4864) # 768 bytes palette + 4096 bytes indices
+transition_state = "running" # "running", "fade_out", "hold_black", "fade_in"
+transition_frame = 0
+next_theme = active_theme
+transition_scale = 1.0
 
 NVM_SIGNATURE = b"FLAGCONF:"
 
@@ -827,7 +831,7 @@ if ssid and password:
             
         @server.route("/api/control")
         def control_route(request: Request):
-            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes, cycle_interval, brightness, active_mode
+            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes, cycle_interval, brightness, active_mode, transition_state, transition_frame, next_theme
             params = request.query_params
             needs_save = False
             
@@ -845,12 +849,11 @@ if ssid and password:
                 
             if "theme" in params:
                 if params["theme"] in THEMES:
-                    active_theme = params["theme"]
+                    next_theme = params["theme"]
+                    transition_state = "fade_out"
+                    transition_frame = 0
                     is_cycling = False # Stop cycling when theme manually forced
                     active_mode = "flag"
-                    # Restore flag coordinates and color palettes
-                    render_static_bitmap(star_layout, vertical_mode)
-                    update_hardware_palette()
                     needs_save = True
                     
             if "mode" in params:
@@ -858,8 +861,10 @@ if ssid and password:
                 if val == "flag":
                     active_mode = "flag"
                     is_cycling = True
-                    render_static_bitmap(star_layout, vertical_mode)
-                    update_hardware_palette()
+                    next_theme = active_theme
+                    transition_state = "fade_in"
+                    transition_frame = 0
+                    transition_scale = 0.0
                     needs_save = True
                     
             if "enabled_themes" in params:
@@ -1106,25 +1111,25 @@ def update_hardware_palette():
         for s in range(16):
             shading = 0.70 + 0.30 * (s / 15.0)
             palette[i * 16 + s] = (
-                int(color[0] * shading * brightness),
-                int(color[1] * shading * brightness),
-                int(color[2] * shading * brightness)
+                int(color[0] * shading * brightness * transition_scale),
+                int(color[1] * shading * brightness * transition_scale),
+                int(color[2] * shading * brightness * transition_scale)
             )
             
     for s in range(16):
         shading = 0.70 + 0.30 * (s / 15.0)
         palette[208 + s] = (
-            int(current_canton[0] * shading * brightness),
-            int(current_canton[1] * shading * brightness),
-            int(current_canton[2] * shading * brightness)
+            int(current_canton[0] * shading * brightness * transition_scale),
+            int(current_canton[1] * shading * brightness * transition_scale),
+            int(current_canton[2] * shading * brightness * transition_scale)
         )
         
     for s in range(16):
         shading = 0.70 + 0.30 * (s / 15.0)
         palette[224 + s] = (
-            int(current_star[0] * shading * brightness),
-            int(current_star[1] * shading * brightness),
-            int(current_star[2] * shading * brightness)
+            int(current_star[0] * shading * brightness * transition_scale),
+            int(current_star[1] * shading * brightness * transition_scale),
+            int(current_star[2] * shading * brightness * transition_scale)
         )
 
 # Pre-calculate star coordinate sets (Landscape layout, 128x64 flag size)
@@ -1245,22 +1250,49 @@ while True:
         print("Changing layout. Vertical Mode:", vertical_mode)
         render_static_bitmap(star_layout, vertical_mode)
         
-    # 3. Cycle theme timer (only if is_cycling is enabled)
-    if is_cycling and (now - last_cycle_time > cycle_interval):
+    # 3. Handle dip-to-black transition state
+    if transition_state == "fade_out":
+        transition_frame += 1
+        transition_scale = 1.0 - (transition_frame / 20.0)
+        if transition_frame >= 20:
+            transition_state = "hold_black"
+            transition_frame = 0
+            transition_scale = 0.0
+    elif transition_state == "hold_black":
+        transition_frame += 1
+        transition_scale = 0.0
+        if transition_frame >= 5:
+            active_theme = next_theme
+            render_static_bitmap(star_layout, vertical_mode)
+            transition_state = "fade_in"
+            transition_frame = 0
+    elif transition_state == "fade_in":
+        transition_frame += 1
+        transition_scale = transition_frame / 20.0
+        if transition_frame >= 20:
+            transition_state = "running"
+            transition_frame = 0
+            transition_scale = 1.0
+            
+    # 4. Cycle theme timer (only if is_cycling is enabled and not transitioning)
+    if is_cycling and transition_state == "running" and (now - last_cycle_time > cycle_interval):
         last_cycle_time = now
         if enabled_themes:
             try:
                 current_idx = enabled_themes.index(active_theme)
                 next_idx = (current_idx + 1) % len(enabled_themes)
-                active_theme = enabled_themes[next_idx]
+                new_theme = enabled_themes[next_idx]
             except ValueError:
-                active_theme = enabled_themes[0]
-            print("Cycling to theme:", active_theme)
+                new_theme = enabled_themes[0]
+            next_theme = new_theme
+            transition_state = "fade_out"
+            transition_frame = 0
+            print("Cycling to theme:", next_theme)
             
     # Fetch theme colors
     target_stripes, target_canton, target_star = get_theme_colors(active_theme, t)
     
-    # 4. Abrupt transitions: set current colors directly to target
+    # 5. Abrupt transitions: set current colors directly to target
     for i in range(13):
         for c in range(3):
             current_stripes[i][c] = target_stripes[i][c]
