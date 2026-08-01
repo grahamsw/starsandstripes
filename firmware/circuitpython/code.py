@@ -205,6 +205,7 @@ if esp and esp.is_connected:
         INDEX_HTML = """<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LED Flag Control Panel</title>
   <style>
@@ -497,7 +498,7 @@ if esp and esp.is_connected:
 
         @web_app.route("/")
         def index_route(request):
-            return ("200 OK", [("Content-Type", "text/html")], [INDEX_HTML])
+            return ("200 OK", [("Content-Type", "text/html; charset=utf-8")], [INDEX_HTML])
 
         @web_app.route("/api/state")
         def state_route(request):

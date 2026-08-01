@@ -167,6 +167,7 @@ load_config()
 INDEX_HTML = """<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ESP32-S3 Flag Control Panel</title>
   <style>
@@ -809,7 +810,7 @@ if ssid and password:
         
         @server.route("/")
         def index_route(request: Request):
-            return Response(request, INDEX_HTML, content_type="text/html")
+            return Response(request, INDEX_HTML, content_type="text/html; charset=utf-8")
             
         @server.route("/api/state")
         def state_route(request: Request):
