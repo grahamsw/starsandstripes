@@ -782,8 +782,8 @@ for r in range(1, 10):
 stars_13_horizontal = []
 for i in range(13):
     angle = i * (2.0 * math.pi / 13.0) - math.pi / 2.0
-    star_x = int((math.cos(angle) / 1.529) * 0.33 * 26.0 + 13.0)
-    star_y = int(math.sin(angle) * 0.33 * 17.0 + 8.5)
+    star_x = int(math.cos(angle) * 6.0 + 13.0)
+    star_y = int(math.sin(angle) * 6.0 + 8.5)
     stars_13_horizontal.append((star_x, star_y))
 
 # Pre-calculate star coordinate sets (Portrait layout)
@@ -798,8 +798,8 @@ for r in range(1, 10):
 stars_13_vertical = []
 for i in range(13):
     angle = i * (2.0 * math.pi / 13.0) - math.pi / 2.0
-    star_y = int((math.cos(angle) * 0.6538) * 0.33 * 17.0 + 8.5)
-    star_x = int(math.sin(angle) * 0.33 * 26.0 + 13.0) + 38
+    star_y = int(math.cos(angle) * 6.0 + 8.5)
+    star_x = int(math.sin(angle) * 6.0 + 51.0)
     stars_13_vertical.append((star_x, star_y))
 
 stars_50_horizontal_set = set(stars_50_horizontal)

@@ -1140,8 +1140,8 @@ for r in range(1, 10):
 stars_13_horizontal = []
 for i in range(13):
     angle = (i * 2.0 * math.pi) / 13.0
-    star_x = int(math.cos(angle) * 16.83 + 89.5)
-    star_y = int(math.sin(angle) * 11.22 + 17.0)
+    star_x = int(math.cos(angle) * 12.5 + 89.5)
+    star_y = int(math.sin(angle) * 12.5 + 17.0)
     stars_13_horizontal.append((star_x, star_y))
 
 # Pre-calculate star coordinate sets (Portrait layout, 64x128 flag size drawn inside 128x64 canvas)
@@ -1156,8 +1156,8 @@ for r in range(1, 10):
 stars_13_vertical = []
 for i in range(13):
     angle = (i * 2.0 * math.pi) / 13.0
-    star_y = int((math.cos(angle) * (34.0 / 51.0)) * 0.33 * 34.0 + 17.0)
-    star_x = int(math.sin(angle) * 0.33 * 51.0 + 25.5) + 77
+    star_y = int(math.cos(angle) * 12.5 + 17.0)
+    star_x = int(math.sin(angle) * 12.5 + 102.5)
     stars_13_vertical.append((star_x, star_y))
 
 stars_50_horizontal_set = set(stars_50_horizontal)
