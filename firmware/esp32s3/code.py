@@ -33,7 +33,7 @@ print("Initializing RGBMatrix (128x64, 1/32 scan)...")
 matrix = rgbmatrix.RGBMatrix(
     width=128,
     height=64,
-    bit_depth=2,  # 2-bit color depth (64 colors total) fits comfortably in SRAM
+    bit_depth=5,  # 5-bit color depth (32,768 colors total) provides smooth, subtle gradients
     rgb_pins=[R1, G1, B1, R2, G2, B2],
     addr_pins=[A, B, C, D, E],
     clock_pin=CLK,
@@ -82,24 +82,9 @@ active_theme = THEMES[0]
 cycle_interval = 10.0      # Cycle to next flag every X seconds
 brightness = 1.0           # LED matrix brightness (0.0 to 1.0) via software color scaling
 active_mode = "flag"       # "flag" or "image"
-image_buffer = bytearray(4096)
+image_buffer = bytearray(4864) # 768 bytes palette + 4096 bytes indices
 
 NVM_SIGNATURE = b"FLAGCONF:"
-
-# Pre-calculate RGB332 palette (256 colors: 3-bit Red, 3-bit Green, 2-bit Blue)
-rgb332_palette = []
-for r_val in range(8):
-    for g_val in range(8):
-        for b_val in range(4):
-            rv = (r_val * 255) // 7
-            gv = (g_val * 255) // 7
-            bv = (b_val * 255) // 3
-            rgb332_palette.append((rv, gv, bv))
-
-def load_rgb332_palette():
-    """Loads the fixed 8-bit RGB332 palette into the hardware palette."""
-    for idx in range(256):
-        palette[idx] = rgb332_palette[idx]
 
 def save_config():
     """Saves the current config to the board's microcontroller.nvm."""
@@ -357,7 +342,7 @@ INDEX_HTML = """<!DOCTYPE html>
   <div class="card" style="display: flex; flex-direction: column; gap: 15px;">
     <h2>🖼️ Custom Image Display</h2>
     <div style="font-size: 13px; color: #94a3b8; line-height: 1.4;">
-      Select any image from your device. It will be center-cropped (no distortion) and optimized.
+      Select an image to display. The app will crop it to a square, run an optimized 256-color quantization, and display it in high-fidelity color.
     </div>
     
     <div style="display: flex; flex-direction: column; gap: 12px; border-top: 1px solid #334155; padding-top: 10px;">
@@ -520,6 +505,92 @@ INDEX_HTML = """<!DOCTYPE html>
       processAndUploadImage();
     }
 
+    // Median-Cut Color Quantization algorithm (custom 256 palette generator)
+    function quantizeMedianCut(pixels) {
+      let points = [];
+      for (let i = 0; i < 4096; i++) {
+        points.push({
+          r: pixels[i * 4],
+          g: pixels[i * 4 + 1],
+          b: pixels[i * 4 + 2],
+          idx: i
+        });
+      }
+      
+      let boxes = [points];
+      
+      while (boxes.length < 256) {
+        let splitIdx = -1;
+        let maxRange = -1;
+        let splitChan = 'r';
+        
+        for (let i = 0; i < boxes.length; i++) {
+          let box = boxes[i];
+          if (box.length <= 1) continue;
+          
+          let minR = 255, maxR = 0;
+          let minG = 255, maxG = 0;
+          let minB = 255, maxB = 0;
+          for (let p of box) {
+            if (p.r < minR) minR = p.r; if (p.r > maxR) maxR = p.r;
+            if (p.g < minG) minG = p.g; if (p.g > maxG) maxG = p.g;
+            if (p.b < minB) minB = p.b; if (p.b > maxB) maxB = p.b;
+          }
+          
+          let rRange = maxR - minR;
+          let gRange = maxG - minG;
+          let bRange = maxB - minB;
+          let range = Math.max(rRange, gRange, bRange);
+          
+          if (range > maxRange) {
+            maxRange = range;
+            splitIdx = i;
+            splitChan = (rRange >= gRange && rRange >= bRange) ? 'r' : (gRange >= bRange ? 'g' : 'b');
+          }
+        }
+        
+        if (splitIdx === -1) break;
+        
+        let boxToSplit = boxes[splitIdx];
+        boxToSplit.sort((a, b) => a[splitChan] - b[splitChan]);
+        
+        let median = Math.floor(boxToSplit.length / 2);
+        let box1 = boxToSplit.slice(0, median);
+        let box2 = boxToSplit.slice(median);
+        
+        boxes.splice(splitIdx, 1, box1, box2);
+      }
+      
+      let palette = new Uint8Array(256 * 3);
+      let indices = new Uint8Array(4096);
+      
+      for (let i = 0; i < boxes.length; i++) {
+        let box = boxes[i];
+        let sumR = 0, sumG = 0, sumB = 0;
+        for (let p of box) {
+          sumR += p.r; sumG += p.g; sumB += p.b;
+        }
+        let avgR = Math.round(sumR / box.length);
+        let avgG = Math.round(sumG / box.length);
+        let avgB = Math.round(sumB / box.length);
+        
+        palette[i * 3] = avgR;
+        palette[i * 3 + 1] = avgG;
+        palette[i * 3 + 2] = avgB;
+        
+        for (let p of box) {
+          indices[p.idx] = i;
+        }
+      }
+      
+      // Zero out trailing empty slots if image has fewer than 256 unique colors
+      for (let i = boxes.length; i < 256; i++) {
+        palette[i * 3] = 0; palette[i * 3 + 1] = 0; palette[i * 3 + 2] = 0;
+      }
+      
+      return { palette, indices };
+    }
+
     async function processAndUploadImage() {
       if (!uploadedFile) return;
       const statusText = document.getElementById('upload-status');
@@ -527,12 +598,11 @@ INDEX_HTML = """<!DOCTYPE html>
       
       const gamma = parseFloat(document.getElementById('img-gamma').value);
       const brightness = parseFloat(document.getElementById('img-brightness').value) / 100.0;
-      const contrast = parseFloat(document.getElementById('img-contrast').value); // -50 to 50
+      const contrast = parseFloat(document.getElementById('img-contrast').value);
       
       const img = new Image();
       img.src = URL.createObjectURL(uploadedFile);
       img.onload = async () => {
-        // Create 64x64 canvas
         const canvas = document.createElement('canvas');
         canvas.width = 64;
         canvas.height = 64;
@@ -544,51 +614,53 @@ INDEX_HTML = """<!DOCTYPE html>
         const sy = (img.height - minDim) / 2;
         ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 64, 64);
         
-        // Extract pixel data
         const imgData = ctx.getImageData(0, 0, 64, 64);
         const pixels = imgData.data;
         
-        // Calculate contrast factor (standard contrast adjustment factor)
-        // Adjust contrast input (-50 to 50) to factor
+        // Calculate contrast factor
         const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
         
-        // Quantize to RGB332 (1 byte per pixel)
-        const buffer = new Uint8Array(4096);
+        // Apply Contrast, Brightness and Gamma scaling
+        const adjustedPixels = new Uint8Array(4096 * 4);
         for (let i = 0; i < 4096; i++) {
           let r = pixels[i * 4];
           let g = pixels[i * 4 + 1];
           let b = pixels[i * 4 + 2];
           
-          // 1. Apply Contrast Adjustment
+          // Contrast
           r = factor * (r - 128) + 128;
           g = factor * (g - 128) + 128;
           b = factor * (b - 128) + 128;
           
-          // Clamp values to 0..255
           r = Math.max(0, Math.min(255, r));
           g = Math.max(0, Math.min(255, g));
           b = Math.max(0, Math.min(255, b));
           
-          // 2. Apply Brightness and Gamma correction
-          // Gamma correction compresses highlights and saves mid-tones on bright LEDs
-          const r_norm = Math.pow((r / 255.0) * brightness, gamma);
-          const g_norm = Math.pow((g / 255.0) * brightness, gamma);
-          const b_norm = Math.pow((b / 255.0) * brightness, gamma);
+          // Brightness & Gamma Correction
+          r = Math.round(Math.pow((r / 255.0) * brightness, gamma) * 255);
+          g = Math.round(Math.pow((g / 255.0) * brightness, gamma) * 255);
+          b = Math.round(Math.pow((b / 255.0) * brightness, gamma) * 255);
           
-          // Scale to ranges: r (0-7), g (0-7), b (0-3)
-          const r3 = Math.round(r_norm * 7);
-          const g3 = Math.round(g_norm * 7);
-          const b2 = Math.round(b_norm * 3);
-          
-          buffer[i] = (r3 << 5) | (g3 << 2) | b2;
+          adjustedPixels[i * 4] = r;
+          adjustedPixels[i * 4 + 1] = g;
+          adjustedPixels[i * 4 + 2] = b;
+          adjustedPixels[i * 4 + 3] = 255;
         }
         
-        // Upload in 4 chunks of 1024 bytes (to respect tiny request buffers)
+        // Run Median-Cut Quantization on the adjusted pixels
+        const quantized = quantizeMedianCut(adjustedPixels);
+        
+        // Build unified payload: 768 bytes palette + 4096 bytes pixel indices = 4864 bytes
+        const payload = new Uint8Array(4864);
+        payload.set(quantized.palette, 0);
+        payload.set(quantized.indices, 768);
+        
+        // Upload in 5 chunks of 1024 bytes (last chunk is 768 bytes)
         const chunkSize = 1024;
         try {
-          for (let offset = 0; offset < 4096; offset += chunkSize) {
-            statusText.innerText = `Uploading chunk ${offset / chunkSize + 1}/4...`;
-            const chunk = buffer.slice(offset, offset + chunkSize);
+          for (let offset = 0; offset < 4864; offset += chunkSize) {
+            statusText.innerText = `Uploading chunk ${offset / chunkSize + 1}/5...`;
+            const chunk = payload.slice(offset, offset + chunkSize);
             
             let res = await fetch(`/api/upload_chunk?offset=${offset}`, {
               method: 'POST',
@@ -741,18 +813,23 @@ if ssid and password:
             # Write chunk directly to our static buffer
             image_buffer[offset:offset+len(chunk_data)] = chunk_data
             
-            # If all 4 chunks are fully received (reaches 4096 bytes)
-            if offset + len(chunk_data) == 4096:
+            # If all 5 chunks are fully received (reaches 4864 bytes)
+            if offset + len(chunk_data) == 4864:
                 is_cycling = False
                 active_mode = "image"
                 
-                # 1. Switch the display to the 256-color RGB332 palette
-                load_rgb332_palette()
+                # 1. Unpack custom 256-color palette (first 768 bytes) into hardware display palette
+                for idx in range(256):
+                    r_c = image_buffer[idx * 3]
+                    g_c = image_buffer[idx * 3 + 1]
+                    b_c = image_buffer[idx * 3 + 2]
+                    palette[idx] = (r_c, g_c, b_c)
                 
-                # 2. Draw pixels directly to the right-hand panel (columns 64 to 127)
+                # 2. Draw quantized indices (remaining 4096 bytes) to the right-hand panel (columns 64 to 127)
+                pixel_offset = 768
                 for y in range(64):
                     for x in range(64):
-                        bitmap[x + 64, y] = image_buffer[y * 64 + x]
+                        bitmap[x + 64, y] = image_buffer[pixel_offset + y * 64 + x]
                 
                 # 3. Push frame immediately to the screen
                 display.refresh()
@@ -1111,6 +1188,6 @@ while True:
         current_canton[c] += (target_canton[c] - current_canton[c]) * TRANSITION_SPEED
         current_star[c] += (target_star[c] - current_star[c]) * TRANSITION_SPEED
         
-    update_hardware_palette()
+        update_hardware_palette()
     display.refresh()
     time.sleep(0.016)
