@@ -342,7 +342,7 @@ INDEX_HTML = """<!DOCTYPE html>
   <div class="card" style="display: flex; flex-direction: column; gap: 15px;">
     <h2>🖼️ Custom Image Display</h2>
     <div style="font-size: 13px; color: #94a3b8; line-height: 1.4;">
-      Select an image to display. The app will crop it to a square, run an optimized 256-color quantization, and display it in high-fidelity color.
+      Select an image to display. The app center-crops it, builds an optimized palette, and applies Floyd-Steinberg error diffusion dithering for smooth color gradients.
     </div>
     
     <div style="display: flex; flex-direction: column; gap: 12px; border-top: 1px solid #334155; padding-top: 10px;">
@@ -591,6 +591,23 @@ INDEX_HTML = """<!DOCTYPE html>
       return { palette, indices };
     }
 
+    // Helper to find closest palette index using Euclidean distance squared
+    function findClosestPaletteColor(r, g, b, palette) {
+      let minDistance = Infinity;
+      let bestIndex = 0;
+      for (let i = 0; i < 256; i++) {
+        const pr = palette[i * 3];
+        const pg = palette[i * 3 + 1];
+        const pb = palette[i * 3 + 2];
+        const distance = (pr - r) * (pr - r) + (pg - g) * (pg - g) + (pb - b) * (pb - b);
+        if (distance < minDistance) {
+          minDistance = distance;
+          bestIndex = i;
+        }
+      }
+      return bestIndex;
+    }
+
     async function processAndUploadImage() {
       if (!uploadedFile) return;
       const statusText = document.getElementById('upload-status');
@@ -620,8 +637,9 @@ INDEX_HTML = """<!DOCTYPE html>
         // Calculate contrast factor
         const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
         
-        // Apply Contrast, Brightness and Gamma scaling
-        const adjustedPixels = new Uint8Array(4096 * 4);
+        // Apply Contrast, Brightness and Gamma scaling, storing as floats for dither precision
+        const fPixels = new Float32Array(4096 * 3);
+        const adjustedPixelsForPalette = new Uint8Array(4096 * 4);
         for (let i = 0; i < 4096; i++) {
           let r = pixels[i * 4];
           let g = pixels[i * 4 + 1];
@@ -637,23 +655,86 @@ INDEX_HTML = """<!DOCTYPE html>
           b = Math.max(0, Math.min(255, b));
           
           // Brightness & Gamma Correction
-          r = Math.round(Math.pow((r / 255.0) * brightness, gamma) * 255);
-          g = Math.round(Math.pow((g / 255.0) * brightness, gamma) * 255);
-          b = Math.round(Math.pow((b / 255.0) * brightness, gamma) * 255);
+          r = Math.pow((r / 255.0) * brightness, gamma) * 255;
+          g = Math.pow((g / 255.0) * brightness, gamma) * 255;
+          b = Math.pow((b / 255.0) * brightness, gamma) * 255;
           
-          adjustedPixels[i * 4] = r;
-          adjustedPixels[i * 4 + 1] = g;
-          adjustedPixels[i * 4 + 2] = b;
-          adjustedPixels[i * 4 + 3] = 255;
+          fPixels[i * 3] = r;
+          fPixels[i * 3 + 1] = g;
+          fPixels[i * 3 + 2] = b;
+          
+          // Quantizer wants round integers
+          adjustedPixelsForPalette[i * 4] = Math.round(r);
+          adjustedPixelsForPalette[i * 4 + 1] = Math.round(g);
+          adjustedPixelsForPalette[i * 4 + 2] = Math.round(b);
+          adjustedPixelsForPalette[i * 4 + 3] = 255;
         }
         
-        // Run Median-Cut Quantization on the adjusted pixels
-        const quantized = quantizeMedianCut(adjustedPixels);
+        // Run Median-Cut Quantization on the adjusted pixels to build custom palette
+        const quantized = quantizeMedianCut(adjustedPixelsForPalette);
+        const palette = quantized.palette;
         
-        // Build unified payload: 768 bytes palette + 4096 bytes pixel indices = 4864 bytes
+        // Apply Floyd-Steinberg Error Diffusion Dithering
+        const indices = new Uint8Array(4096);
+        for (let y = 0; y < 64; y++) {
+          for (let x = 0; x < 64; x++) {
+            const idx = y * 64 + x;
+            
+            // Get current color values (including accumulated neighbor errors)
+            const oldR = fPixels[idx * 3];
+            const oldG = fPixels[idx * 3 + 1];
+            const oldB = fPixels[idx * 3 + 2];
+            
+            // Find closest palette index
+            const bestIndex = findClosestPaletteColor(oldR, oldG, oldB, palette);
+            indices[idx] = bestIndex;
+            
+            // Get matching palette color
+            const newR = palette[bestIndex * 3];
+            const newG = palette[bestIndex * 3 + 1];
+            const newB = palette[bestIndex * 3 + 2];
+            
+            // Calculate errors
+            const errR = oldR - newR;
+            const errG = oldG - newG;
+            const errB = oldB - newB;
+            
+            // Distribute error to 4 neighbors:
+            // 1. Right (x+1, y) -> 7/16
+            if (x < 63) {
+              const nIdx = idx + 1;
+              fPixels[nIdx * 3]     = Math.max(0, Math.min(255, fPixels[nIdx * 3]     + errR * 7/16));
+              fPixels[nIdx * 3 + 1] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 1] + errG * 7/16));
+              fPixels[nIdx * 3 + 2] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 2] + errB * 7/16));
+            }
+            // 2. Bottom-Left (x-1, y+1) -> 3/16
+            if (x > 0 && y < 63) {
+              const nIdx = idx + 63;
+              fPixels[nIdx * 3]     = Math.max(0, Math.min(255, fPixels[nIdx * 3]     + errR * 3/16));
+              fPixels[nIdx * 3 + 1] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 1] + errG * 3/16));
+              fPixels[nIdx * 3 + 2] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 2] + errB * 3/16));
+            }
+            // 3. Bottom (x, y+1) -> 5/16
+            if (y < 63) {
+              const nIdx = idx + 64;
+              fPixels[nIdx * 3]     = Math.max(0, Math.min(255, fPixels[nIdx * 3]     + errR * 5/16));
+              fPixels[nIdx * 3 + 1] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 1] + errG * 5/16));
+              fPixels[nIdx * 3 + 2] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 2] + errB * 5/16));
+            }
+            // 4. Bottom-Right (x+1, y+1) -> 1/16
+            if (x < 63 && y < 63) {
+              const nIdx = idx + 65;
+              fPixels[nIdx * 3]     = Math.max(0, Math.min(255, fPixels[nIdx * 3]     + errR * 1/16));
+              fPixels[nIdx * 3 + 1] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 1] + errG * 1/16));
+              fPixels[nIdx * 3 + 2] = Math.max(0, Math.min(255, fPixels[nIdx * 3 + 2] + errB * 1/16));
+            }
+          }
+        }
+        
+        // Build unified payload: 768 bytes palette + 4096 bytes dithered indices = 4864 bytes
         const payload = new Uint8Array(4864);
-        payload.set(quantized.palette, 0);
-        payload.set(quantized.indices, 768);
+        payload.set(palette, 0);
+        payload.set(indices, 768);
         
         // Upload in 5 chunks of 1024 bytes (last chunk is 768 bytes)
         const chunkSize = 1024;
@@ -1188,6 +1269,6 @@ while True:
         current_canton[c] += (target_canton[c] - current_canton[c]) * TRANSITION_SPEED
         current_star[c] += (target_star[c] - current_star[c]) * TRANSITION_SPEED
         
-        update_hardware_palette()
+    update_hardware_palette()
     display.refresh()
     time.sleep(0.016)
