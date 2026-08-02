@@ -28,21 +28,54 @@ CLK = board.IO5
 LAT = board.IO21
 OE = board.IO4
 
-print("Initializing RGBMatrix (128x64, 1/32 scan)...")
-# Allocate high-memory matrix buffer immediately at boot when SRAM is cleanest
-matrix = rgbmatrix.RGBMatrix(
-    width=128,
-    height=64,
-    bit_depth=2,  # 2-bit color depth (64 colors total) solves all signal noise and screen flickering
-    rgb_pins=[R1, G1, B1, R2, G2, B2],
-    addr_pins=[A, B, C, D, E],
-    clock_pin=CLK,
-    latch_pin=LAT,
-    output_enable_pin=OE
-)
+matrix = None
+display = None
+bitmap = None
+palette = None
+tile_grid = None
+group = None
+current_bit_depth = 2
 
-# Associate matrix with displayio framebuffer (manual refresh to sync with crossfading)
-display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
+def init_display_with_depth(depth):
+    global matrix, display, bitmap, palette, tile_grid, group, current_bit_depth
+    
+    # 1. Release existing display if any
+    displayio.release_displays()
+    if matrix is not None:
+        try:
+            matrix.deinit()
+        except Exception:
+            pass
+            
+    import gc
+    gc.collect()
+    
+    print("Initializing RGBMatrix with bit_depth={}...".format(depth))
+    matrix = rgbmatrix.RGBMatrix(
+        width=128,
+        height=64,
+        bit_depth=depth,
+        rgb_pins=[R1, G1, B1, R2, G2, B2],
+        addr_pins=[A, B, C, D, E],
+        clock_pin=CLK,
+        latch_pin=LAT,
+        output_enable_pin=OE
+    )
+    display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
+    
+    # Re-create bitmap and palette
+    bitmap = displayio.Bitmap(128, 64, 256)
+    palette = displayio.Palette(256)
+    
+    tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
+    group = displayio.Group()
+    group.append(tile_grid)
+    display.root_group = group
+    
+    current_bit_depth = depth
+
+# Allocate 2-bit matrix immediately at boot when SRAM is cleanest
+init_display_with_depth(2)
 
 # 3. Import remaining libraries (which can be loaded in fragmented memory)
 import time
@@ -831,7 +864,7 @@ if ssid and password:
             
         @server.route("/api/control")
         def control_route(request: Request):
-            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes, cycle_interval, brightness, active_mode, transition_state, transition_frame, next_theme
+            global is_cycling, star_layout, vertical_mode, active_theme, enabled_themes, cycle_interval, brightness, active_mode, transition_state, transition_frame, next_theme, current_bit_depth
             params = request.query_params
             needs_save = False
             
@@ -861,7 +894,9 @@ if ssid and password:
                 if val == "flag":
                     active_mode = "flag"
                     is_cycling = True
-                    next_theme = active_theme
+                    if current_bit_depth != 2:
+                        init_display_with_depth(2)
+                    render_static_bitmap(star_layout, vertical_mode)
                     transition_state = "fade_in"
                     transition_frame = 0
                     transition_scale = 0.0
@@ -903,6 +938,10 @@ if ssid and password:
                 is_cycling = False
                 active_mode = "image"
                 
+                # Reinitialize display to 5-bit for rich custom pictures!
+                if current_bit_depth != 5:
+                    init_display_with_depth(5)
+                
                 # 1. Unpack custom 256-color palette (first 768 bytes) into hardware display palette
                 for idx in range(256):
                     r_c = image_buffer[idx * 3]
@@ -929,9 +968,7 @@ if ssid and password:
 else:
     print("WiFi: No SSID or password set in settings.toml")
 
-# 4. Create 128x64 bitmap for draw operations
-bitmap = displayio.Bitmap(128, 64, 256)
-palette = displayio.Palette(256)
+
 
 def hsv_to_rgb(h, s, v):
     """Utility to convert HSV values (0..1) to RGB (0..255)."""
@@ -1214,11 +1251,7 @@ def render_static_bitmap(layout_mode, vert_mode):
 render_static_bitmap(star_layout, vertical_mode)
 update_hardware_palette()
 
-# Display configuration
-tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
-group = displayio.Group()
-group.append(tile_grid)
-display.root_group = group
+
 
 start_time = time.monotonic()
 last_cycle_time = start_time
@@ -1263,6 +1296,8 @@ while True:
         transition_scale = 0.0
         if transition_frame >= 5:
             active_theme = next_theme
+            if active_mode == "flag" and current_bit_depth != 2:
+                init_display_with_depth(2)
             render_static_bitmap(star_layout, vertical_mode)
             transition_state = "fade_in"
             transition_frame = 0
