@@ -38,6 +38,7 @@ matrix = rgbmatrix.RGBMatrix(
 
 # Associate matrix with displayio framebuffer
 display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
+display.rotation = 180
 
 # Configurable Parameters
 THEMES = [

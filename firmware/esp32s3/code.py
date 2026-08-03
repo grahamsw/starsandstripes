@@ -62,6 +62,7 @@ def init_display_with_depth(depth):
         output_enable_pin=OE
     )
     display = framebufferio.FramebufferDisplay(matrix, auto_refresh=False)
+    display.rotation = 180
     
     # Re-create bitmap and palette
     bitmap = displayio.Bitmap(128, 64, 256)
