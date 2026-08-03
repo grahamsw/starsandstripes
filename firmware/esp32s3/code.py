@@ -950,11 +950,11 @@ if ssid and password:
                     b_c = image_buffer[idx * 3 + 2]
                     palette[idx] = (r_c, g_c, b_c)
                 
-                # 2. Draw quantized indices (remaining 4096 bytes) to the right-hand panel (columns 64 to 127)
+                # 2. Draw quantized indices (remaining 4096 bytes) to the left-hand panel (columns 0 to 63)
                 pixel_offset = 768
                 for y in range(64):
                     for x in range(64):
-                        bitmap[x + 64, y] = image_buffer[pixel_offset + y * 64 + x]
+                        bitmap[x, y] = image_buffer[pixel_offset + y * 64 + x]
                 
                 # 3. Push frame immediately to the screen
                 display.refresh()
@@ -1176,12 +1176,12 @@ stars_50_horizontal = []
 for r in range(1, 10):
     for c in range(1, 12):
         if (r % 2 == 1 and c % 2 == 1) or (r % 2 == 0 and c % 2 == 0):
-            stars_50_horizontal.append((int((c / 12.0) * 51.0) + 64, int((r / 10.0) * 34.0)))
+            stars_50_horizontal.append((int((c / 12.0) * 51.0), int((r / 10.0) * 34.0)))
 
 stars_13_horizontal = []
 for i in range(13):
     angle = (i * 2.0 * math.pi) / 13.0
-    star_x = int(math.cos(angle) * 12.5 + 89.5)
+    star_x = int(math.cos(angle) * 12.5 + 25.5)
     star_y = int(math.sin(angle) * 12.5 + 17.0)
     stars_13_horizontal.append((star_x, star_y))
 
@@ -1191,14 +1191,14 @@ for r in range(1, 10):
     for c in range(1, 12):
         if (r % 2 == 1 and c % 2 == 1) or (r % 2 == 0 and c % 2 == 0):
             star_y = int((c / 12.0) * 34.0)
-            star_x = int((r / 10.0) * 51.0) + 77
+            star_x = int((r / 10.0) * 51.0) + 13
             stars_50_vertical.append((star_x, star_y))
 
 stars_13_vertical = []
 for i in range(13):
     angle = (i * 2.0 * math.pi) / 13.0
     star_y = int(math.cos(angle) * 12.5 + 17.0)
-    star_x = int(math.sin(angle) * 12.5 + 102.5)
+    star_x = int(math.sin(angle) * 12.5 + 38.5)
     stars_13_vertical.append((star_x, star_y))
 
 stars_50_horizontal_set = set(stars_50_horizontal)
@@ -1231,11 +1231,11 @@ def render_static_bitmap(layout_mode, vert_mode):
         for x in range(128):
             if vert_mode == 1:
                 # Rotated flag layout: canton in the top right
-                in_canton = (y < 34 and x >= 77)
+                in_canton = (y < 34 and x >= 13 and x < 64)
                 stripe_idx = (y * 13) // 64
             else:
-                # Standard flag layout: canton on the left of the single panel (columns 64-114)
-                in_canton = (x >= 64 and x < 115 and y < 34)
+                # Standard flag layout: canton on the left of the single panel (columns 0-50)
+                in_canton = (x >= 0 and x < 51 and y < 34)
                 stripe_idx = (y * 13) // 64
                 
             stripe_base_offset = stripe_idx * 16
