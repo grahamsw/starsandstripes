@@ -68,11 +68,28 @@ def init_display_with_depth(depth):
     bitmap = displayio.Bitmap(128, 64, 256)
     palette = displayio.Palette(256)
     
-    tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
-    tile_grid.flip_x = True # Flip horizontally to correct mirrored physical LED panel wiring
+    # Create two 64x64 tile grids to swap left/right panels in hardware
+    tile_grid_left = displayio.TileGrid(
+        bitmap, pixel_shader=palette,
+        width=1, height=1,
+        tile_width=64, tile_height=64,
+        x=0, y=0
+    )
+    tile_grid_left[0] = 1 # Left screen position (which rotates to right) displays columns 64-127
+    tile_grid_left.flip_x = True
+    
+    tile_grid_right = displayio.TileGrid(
+        bitmap, pixel_shader=palette,
+        width=1, height=1,
+        tile_width=64, tile_height=64,
+        x=64, y=0
+    )
+    tile_grid_right[0] = 0 # Right screen position (which rotates to left) displays columns 0-63
+    tile_grid_right.flip_x = True
     
     group = displayio.Group()
-    group.append(tile_grid)
+    group.append(tile_grid_left)
+    group.append(tile_grid_right)
     display.root_group = group
     
     current_bit_depth = depth
