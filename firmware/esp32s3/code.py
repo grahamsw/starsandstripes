@@ -75,7 +75,7 @@ def init_display_with_depth(depth):
         tile_width=64, tile_height=64,
         x=0, y=0
     )
-    tile_grid_left[0] = 1 # Left screen position (which rotates to right) displays columns 64-127
+    tile_grid_left[0] = 0 # Left screen position (which rotates to right) displays columns 0-63
     tile_grid_left.flip_x = True
     
     tile_grid_right = displayio.TileGrid(
@@ -84,7 +84,7 @@ def init_display_with_depth(depth):
         tile_width=64, tile_height=64,
         x=64, y=0
     )
-    tile_grid_right[0] = 0 # Right screen position (which rotates to left) displays columns 0-63
+    tile_grid_right[0] = 1 # Right screen position (which rotates to left) displays columns 64-127
     tile_grid_right.flip_x = True
     
     group = displayio.Group()
