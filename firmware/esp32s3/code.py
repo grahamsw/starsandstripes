@@ -1,6 +1,6 @@
 # ESP32-S3 DevKitC-1 N16R8 & SeenGreat RGB Matrix Adapter Board (E) Rev 2.2 Flag Controller
 # Display: Dual 64x64 RGB HUB75 LED Panels chained side-by-side (128x64 resolution, 1/32 Scan)
-# (Left 64x64 half displays on a single panel setup, showing the complete canton and stars)
+# (Left 64x64 panel displays on a single panel setup, showing the complete canton and stars)
 
 import board
 import rgbmatrix
@@ -69,6 +69,8 @@ def init_display_with_depth(depth):
     palette = displayio.Palette(256)
     
     tile_grid = displayio.TileGrid(bitmap, pixel_shader=palette)
+    tile_grid.flip_x = True # Flip horizontally to correct mirrored physical LED panel wiring
+    
     group = displayio.Group()
     group.append(tile_grid)
     display.root_group = group
@@ -969,8 +971,6 @@ if ssid and password:
 else:
     print("WiFi: No SSID or password set in settings.toml")
 
-
-
 def hsv_to_rgb(h, s, v):
     """Utility to convert HSV values (0..1) to RGB (0..255)."""
     i = int(h * 6.0)
@@ -1098,15 +1098,7 @@ def get_theme_colors(theme_name, t=0.0):
         canton = (156, 89, 209)
         star = (255, 244, 48)
 
-    # 8. Dynamic Scrolling Rainbow
-    elif theme_name == "rainbow_wave":
-        for i in range(13):
-            hue = (i / 12.0 * 1.3 - t * 0.45) % 1.0
-            stripes[i] = hsv_to_rgb(hue, 1.0, 1.0)
-        canton = hsv_to_rgb((t * 0.08) % 1.0, 0.9, 0.22)
-        star = hsv_to_rgb((t * 0.25) % 1.0, 0.85, 1.0)
-        
-    # 9. Tactical Thin Line themes
+    # 8. Tactical Thin Line themes
     else:
         black = (18, 18, 18)
         grey = (210, 210, 210)
@@ -1171,7 +1163,6 @@ def update_hardware_palette():
         )
 
 # Pre-calculate star coordinate sets (Landscape layout, 128x64 flag size)
-# Shifting canton to the left edge of the first panel (columns 64-114) for correct display
 stars_50_horizontal = []
 for r in range(1, 10):
     for c in range(1, 12):
@@ -1252,8 +1243,6 @@ def render_static_bitmap(layout_mode, vert_mode):
 render_static_bitmap(star_layout, vertical_mode)
 update_hardware_palette()
 
-
-
 start_time = time.monotonic()
 last_cycle_time = start_time
 last_star_layout = star_layout
@@ -1285,6 +1274,7 @@ while True:
         render_static_bitmap(star_layout, vertical_mode)
         
     # 3. Handle dip-to-black transition state
+    global transition_state, transition_frame, active_theme, next_theme, transition_scale
     if transition_state == "fade_out":
         transition_frame += 1
         transition_scale = 1.0 - (transition_frame / 20.0)
