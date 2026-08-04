@@ -1274,7 +1274,6 @@ while True:
         render_static_bitmap(star_layout, vertical_mode)
         
     # 3. Handle dip-to-black transition state
-    global transition_state, transition_frame, active_theme, next_theme, transition_scale
     if transition_state == "fade_out":
         transition_frame += 1
         transition_scale = 1.0 - (transition_frame / 20.0)
